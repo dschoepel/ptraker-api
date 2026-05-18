@@ -8,6 +8,12 @@ const { requireAuth } = require('../middleware/auth');
 // GET /api/v1/watchlist
 router.get('/', requireAuth, watchlistController.getAll);
 
+// GET /api/v1/watchlist/search
+router.get('/search', requireAuth, watchlistController.search);
+
+// GET /api/v1/watchlist/:ticker/history
+router.get('/:ticker/history', requireAuth, watchlistController.getHistory);
+
 // POST /api/v1/watchlist
 router.post('/', requireAuth, watchlistController.add);
 

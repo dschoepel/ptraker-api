@@ -10,7 +10,6 @@ const logger = require('../utils/logger');
 
 // -----------------------------------------------------------------------------
 // GET /api/v1/watchlist
-// Returns user's watchlist with current prices from price_cache
 // -----------------------------------------------------------------------------
 const getAll = async (req, res, next) => {
   try {
@@ -28,7 +27,6 @@ const getAll = async (req, res, next) => {
       return res.status(200).json({ success: true, count: 0, watchlist: [] });
     }
 
-    // Fetch current prices from price_cache
     const tickers = items.map(i => i.ticker).filter(t => t !== 'CASH');
     const { data: prices } = await supabase
       .from('price_cache')
@@ -40,17 +38,53 @@ const getAll = async (req, res, next) => {
 
     const watchlist = items.map(item => ({
       ...item,
-      current_price:   priceMap[item.ticker]?.price || null,
-      change_amount:   priceMap[item.ticker]?.change_amount || null,
-      change_percent:  priceMap[item.ticker]?.change_percent || null,
-      price_as_of:     priceMap[item.ticker]?.last_fetched_at || null,
+      current_price:  priceMap[item.ticker]?.price || null,
+      change_amount:  priceMap[item.ticker]?.change_amount || null,
+      change_percent: priceMap[item.ticker]?.change_percent || null,
+      price_as_of:    priceMap[item.ticker]?.last_fetched_at || null,
     }));
 
-    return res.status(200).json({
-      success: true,
-      count: watchlist.length,
-      watchlist,
+    return res.status(200).json({ success: true, count: watchlist.length, watchlist });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+// -----------------------------------------------------------------------------
+// GET /api/v1/watchlist/:ticker/history?days=30
+// Returns daily close prices for sparkline chart
+// -----------------------------------------------------------------------------
+const getHistory = async (req, res, next) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase();
+    const days = parseInt(req.query.days) || 30;
+
+    const YahooFinance = require('yahoo-finance2').default;
+    const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+
+    const period1 = new Date();
+    period1.setDate(period1.getDate() - days);
+
+    const result = await yahooFinance.chart(ticker, {
+      period1: period1.toISOString().split('T')[0],
+      interval: '1d',
     });
+
+    if (!result || !result.quotes || result.quotes.length === 0) {
+      return res.status(200).json({ success: true, ticker, history: [] });
+    }
+
+    const history = result.quotes
+      .filter(q => q.close !== null)
+      .map(q => ({
+        date:  q.date instanceof Date
+          ? q.date.toISOString().split('T')[0]
+          : String(q.date).split('T')[0],
+        close: q.close,
+      }));
+
+    return res.status(200).json({ success: true, ticker, history });
 
   } catch (err) {
     next(err);
@@ -59,7 +93,6 @@ const getAll = async (req, res, next) => {
 
 // -----------------------------------------------------------------------------
 // POST /api/v1/watchlist
-// Body: { ticker, assetName?, assetType?, notes?, addedFrom? }
 // -----------------------------------------------------------------------------
 const add = async (req, res, next) => {
   try {
@@ -80,10 +113,7 @@ const add = async (req, res, next) => {
         asset_type: assetType || null,
         notes:      notes || null,
         added_from: addedFrom || 'manual',
-      }, {
-        onConflict: 'user_id,ticker',
-        ignoreDuplicates: false,
-      })
+      }, { onConflict: 'user_id,ticker', ignoreDuplicates: false })
       .select()
       .single();
 
@@ -97,15 +127,13 @@ const add = async (req, res, next) => {
       return next(error);
     }
 
-    // Fetch price for the new ticker if not already cached
     try {
       await fetchPricesForTickers([ticker.toUpperCase()]);
     } catch {
-      // Price fetch failure is non-fatal
+      // Non-fatal
     }
 
     logger.info('Watchlist item added', { userId: req.user.id, ticker });
-
     return res.status(201).json({ success: true, item });
 
   } catch (err) {
@@ -115,7 +143,6 @@ const add = async (req, res, next) => {
 
 // -----------------------------------------------------------------------------
 // PATCH /api/v1/watchlist/:ticker
-// Body: { notes? }
 // -----------------------------------------------------------------------------
 const update = async (req, res, next) => {
   try {
@@ -159,7 +186,6 @@ const remove = async (req, res, next) => {
     if (error) return next(error);
 
     logger.info('Watchlist item removed', { userId: req.user.id, ticker });
-
     return res.status(200).json({ success: true, message: `${ticker} removed from watchlist` });
 
   } catch (err) {
@@ -167,4 +193,33 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, add, update, remove };
+const search = async (req, res, next) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.length < 2) {
+      return res.status(200).json({ success: true, results: [] });
+    }
+
+    const YahooFinance = require('yahoo-finance2').default;
+    const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+
+    const result = await yahooFinance.search(q);
+
+    const results = (result.quotes || [])
+      .filter(r => r.symbol && r.quoteType !== 'OPTION')
+      .slice(0, 8)
+      .map(r => ({
+        ticker:   r.symbol,
+        name:     r.longname || r.shortname || r.symbol,
+        exchDisp: r.exchDisp || r.exchange,
+        typeDisp: r.typeDisp || r.quoteType,
+      }));
+
+    return res.status(200).json({ success: true, results });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getAll, getHistory, add, update, remove, search };
