@@ -265,4 +265,81 @@ const getHistory = async (req, res, next) => {
   }
 };
 
-module.exports = { getImporters, uploadAndImport, getHistory };
+// -----------------------------------------------------------------------------
+// POST /api/v1/import/manual
+// Body: { importerId, accountId, ticker, balance, assetName, assetType }
+// -----------------------------------------------------------------------------
+const manualImport = async (req, res, next) => {
+  try {
+    const { importerId, accountId, ticker, balance, assetName, assetType } = req.body;
+
+    if (!accountId) {
+      return res.status(400).json({ success: false, message: 'accountId is required' });
+    }
+    if (!ticker) {
+      return res.status(400).json({ success: false, message: 'ticker is required' });
+    }
+    if (balance === undefined || balance === null || balance === '') {
+      return res.status(400).json({ success: false, message: 'balance is required' });
+    }
+
+    const importer = getImporter(importerId || 'manual');
+    if (!importer || !importer.isManual) {
+      return res.status(400).json({ success: false, message: 'Invalid manual importer' });
+    }
+
+    const { positions, errors } = importer.parse({ ticker, balance, assetName, assetType });
+
+    if (positions.length === 0) {
+      return res.status(422).json({ success: false, message: 'No valid position data', errors });
+    }
+
+    const supabase = getAdminClient();
+    const position = positions[0];
+
+    const { error: upsertError } = await supabase
+      .from('positions')
+      .upsert({
+        user_id:       req.user.id,
+        account_id:    accountId,
+        ticker:        position.ticker,
+        asset_name:    position.assetName,
+        asset_type:    position.assetType,
+        shares:        position.shares,
+        cost_basis:    position.costBasis || 0,
+        import_source: 'manual',
+        imported_at:   new Date().toISOString(),
+        as_of_date:    position.asOfDate,
+      }, { onConflict: 'account_id,ticker', ignoreDuplicates: false });
+
+    if (upsertError) return next(upsertError);
+
+    await supabase.from('import_history').insert({
+      user_id:       req.user.id,
+      account_id:    accountId,
+      filename:      `Manual entry — ${position.ticker}`,
+      file_format:   'manual',
+      institution:   'manual',
+      status:        'success',
+      rows_parsed:   1,
+      rows_imported: 1,
+      rows_skipped:  0,
+      as_of_date:    position.asOfDate,
+    });
+
+    logger.info('Manual position entry', { userId: req.user.id, accountId, ticker: position.ticker });
+
+    return res.status(200).json({
+      success: true,
+      status: 'success',
+      rowsImported: 1,
+      ticker: position.ticker,
+      balance: position.shares,
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getImporters, uploadAndImport, manualImport, getHistory };
