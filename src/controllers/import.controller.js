@@ -188,7 +188,7 @@ const uploadAndImport = async (req, res, next) => {
 
     await supabase.from('import_history').insert({
       user_id:       req.user.id,
-      account_id:    accountId || null,
+      account_id:    accountId || Object.keys(positionsByAccount)[0] || null,
       filename:      req.file.originalname,
       file_format:   'csv',
       institution:   importer.institution,

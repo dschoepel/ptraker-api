@@ -278,6 +278,75 @@ const forgotPassword = async (req, res, next) => {
   }
 };
 
+// POST /api/v1/auth/reset-password
+// Body: { accessToken, password }
+const resetPassword = async (req, res, next) => {
+  try {
+    const { accessToken, password } = req.body;
+
+    if (!accessToken || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Access token and password are required',
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(422).json({
+        success: false,
+        message: 'Password must be at least 8 characters',
+      });
+    }
+
+    // Use the recovery token to authenticate and update the password
+    const anonClient = getAnonClient();
+    const { error: sessionError } = await anonClient.auth.setSession({
+      access_token: accessToken,
+      refresh_token: '', // not needed for password reset
+    });
+
+    if (sessionError) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired reset link',
+      });
+    }
+
+    // Update the password using admin client
+    const adminClient = getAdminClient();
+    const { data: { user }, error: userError } = await anonClient.auth.getUser(accessToken);
+
+    if (userError || !user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired reset link',
+      });
+    }
+
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(
+      user.id,
+      { password }
+    );
+
+    if (updateError) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to update password',
+      });
+    }
+
+    logger.info('Password reset successful', { userId: user.id });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password updated successfully',
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   login,
   logout,
@@ -285,4 +354,5 @@ module.exports = {
   getProfile,
   updateProfile,
   forgotPassword,
+  resetPassword,
 };

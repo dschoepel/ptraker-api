@@ -22,14 +22,16 @@ const Papa = require('papaparse');
 
 // Maps LPL's Security Type Description to our internal asset_type values
 const SECURITY_TYPE_MAP = {
-    'mutual fund - open-end': 'mutual_fund',
-    'mutual fund - closed-end': 'etf',
-    'cash': 'cash',
-    'money market': 'cash',
-    'equity': 'stock',
-    'etf': 'etf',
-    'fixed income': 'other',
-    'alternative': 'other',
+  'mutual fund - open-end':   'mutual_fund',
+  'mutual fund - closed-end': 'etf',
+  'cash':                     'cash',
+  'money market':             'cash',
+  'equity':                   'stock',
+  'common stock':             'stock',      // ← add this
+  'etf':                      'etf',
+  'exchange traded fund':     'etf',        // ← add this just in case
+  'fixed income':             'other',
+  'alternative':              'other',
 };
 
 // Tickers to treat as cash positions

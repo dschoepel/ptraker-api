@@ -70,4 +70,17 @@ router.post('/forgot-password',
   authController.forgotPassword
 );
 
+// POST /api/v1/auth/reset-password
+router.post('/reset-password',
+  [
+    body('password')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters'),
+    body('accessToken')
+      .notEmpty()
+      .withMessage('Access token is required'),
+  ],
+  authController.resetPassword
+);
+
 module.exports = router;
