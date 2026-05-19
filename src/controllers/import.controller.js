@@ -268,10 +268,15 @@ const getHistory = async (req, res, next) => {
 // -----------------------------------------------------------------------------
 // POST /api/v1/import/manual
 // Body: { importerId, accountId, ticker, balance, assetName, assetType }
+// Handles manual balance/position entry without a file upload
 // -----------------------------------------------------------------------------
 const manualImport = async (req, res, next) => {
   try {
-    const { importerId, accountId, ticker, balance, assetName, assetType } = req.body;
+    const {
+      importerId, accountId, ticker,
+      balance, marketValue, shares, costBasis,
+      assetName, assetType,
+    } = req.body;
 
     if (!accountId) {
       return res.status(400).json({ success: false, message: 'accountId is required' });
@@ -279,8 +284,8 @@ const manualImport = async (req, res, next) => {
     if (!ticker) {
       return res.status(400).json({ success: false, message: 'ticker is required' });
     }
-    if (balance === undefined || balance === null || balance === '') {
-      return res.status(400).json({ success: false, message: 'balance is required' });
+    if (!balance && !marketValue && !shares) {
+      return res.status(400).json({ success: false, message: 'balance, marketValue, or shares is required' });
     }
 
     const importer = getImporter(importerId || 'manual');
@@ -288,7 +293,36 @@ const manualImport = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid manual importer' });
     }
 
-    const { positions, errors } = importer.parse({ ticker, balance, assetName, assetType });
+    // For non-cash tickers, fetch current price to back-calculate shares from market value
+    let currentPrice = null;
+    const upperTicker = ticker.toUpperCase();
+    if (upperTicker !== 'CASH' && !shares) {
+      try {
+        const supabase = getAdminClient();
+        const { data: cached } = await supabase
+          .from('price_cache')
+          .select('price')
+          .eq('ticker', upperTicker)
+          .single();
+
+        if (cached?.price) {
+          currentPrice = cached.price;
+        } else {
+          const YahooFinance = require('yahoo-finance2').default;
+          const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+          const quote = await yf.quote(upperTicker);
+          if (quote?.regularMarketPrice) {
+            currentPrice = quote.regularMarketPrice;
+          }
+        }
+      } catch {
+        // Non-fatal — will fall back to market value as shares
+      }
+    }
+
+    const { positions, errors } = importer.parse({
+      ticker, balance, marketValue, shares, costBasis, assetName, assetType, currentPrice,
+    });
 
     if (positions.length === 0) {
       return res.status(422).json({ success: false, message: 'No valid position data', errors });
@@ -314,6 +348,18 @@ const manualImport = async (req, res, next) => {
 
     if (upsertError) return next(upsertError);
 
+    // Refresh price cache for non-cash tickers so dashboard shows
+    // live price immediately without needing a manual refresh
+    if (upperTicker !== 'CASH') {
+      try {
+        const { fetchPricesForTickers } = require('../services/priceRefresh');
+        await fetchPricesForTickers([upperTicker]);
+      } catch {
+        // Non-fatal — price will update on next scheduled refresh
+      }
+    }
+
+    // Log to import history
     await supabase.from('import_history').insert({
       user_id:       req.user.id,
       account_id:    accountId,
@@ -327,7 +373,12 @@ const manualImport = async (req, res, next) => {
       as_of_date:    position.asOfDate,
     });
 
-    logger.info('Manual position entry', { userId: req.user.id, accountId, ticker: position.ticker });
+    logger.info('Manual position entry', {
+      userId: req.user.id,
+      accountId,
+      ticker: position.ticker,
+      balance,
+    });
 
     return res.status(200).json({
       success: true,

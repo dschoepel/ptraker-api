@@ -11,7 +11,7 @@ Last updated: May 2026
 
 portfolioTraker (ptraker) is a personal investment portfolio tracker:
 - Consolidates holdings across multiple financial institutions
-- Imports position data from CSV/QFX exports and manual entry
+- Imports position data from CSV exports and manual entry
 - Fetches daily prices from Yahoo Finance
 - Watchlist with sparkline chart data and symbol search
 - Consolidated dashboard with current values and gain/loss
@@ -35,7 +35,7 @@ portfolioTraker (ptraker) is a personal investment portfolio tracker:
 | Auth | Supabase Auth (JWT) |
 | Price data | yahoo-finance2 v3 |
 | Scheduler | node-cron |
-| File parsing | papaparse (CSV), ofx-js (QFX) |
+| File parsing | papaparse (CSV) |
 | Logging | Winston |
 
 ### yahoo-finance2 v3 Usage
@@ -78,12 +78,12 @@ const chart = await yahooFinance.chart(ticker, { period1: '2026-04-01', interval
 - `accounts` — institution, type, account_number_last4, is_active
 - `positions` — ticker, shares, cost_basis, asset_type, as_of_date
 - `price_cache` — shared, ticker PK, includes CASH at $1.00
-- `import_history` — account_id, status, rows counts, as_of_date, file_format
+- `import_history` — account_id, status, rows, as_of_date, file_format
 - `watchlist` — ticker, asset_name, asset_type, notes, added_from, added_at
 
 ### Views
 - `portfolio_summary` — positions + prices + calculations
-- `account_summary` — per account rollup + `last_imported_at` (subquery on import_history)
+- `account_summary` — per account rollup + `last_imported_at`
 - `net_worth_summary` — grand totals per user
 
 All views: `security_invoker=true`, anon revoked, authenticated granted.
@@ -98,60 +98,73 @@ RLS: `(select auth.uid())` pattern on all tables.
 
 ---
 
-## Supabase Client Pattern
-
-```javascript
-const { getAnonClient, getAdminClient } = require('../lib/supabase');
-// getAnonClient() — respects RLS, JWT validation only
-// getAdminClient() — bypasses RLS, all data operations
-```
-
----
-
-## Import Pipeline
-
-Plugin architecture: `src/importers/`
-Each plugin: `parse(buffer) → { positions, skipped, errors }`
-Upsert on `UNIQUE(account_id, ticker)`
-
-### Sync-delete
-When `syncMode=true` in upload request:
-- Removes positions from DB not present in file
-- Returns `removedPositions[]` in response for watchlist integration
-
-### Manual Entry
-- `POST /api/v1/import/manual` — no file, just JSON body
-- Uses `manual.js` importer (isManual: true flag)
-- Creates a single CASH position with balance as shares
-- Used for bank accounts with no recent transactions
-
-### Import History file_format values
-`'csv'` | `'qfx'` | `'ofx'` | `'manual'`
-
----
-
 ## Import Plugins
 
 | Plugin | Institution | Format | Status | Notes |
 |---|---|---|---|---|
-| `lpl_csv` | LPL Financial | CSV | ✅ Complete | Multi-account, BOM handling |
-| `cfcu_csv` | Community First CU | CSV | ✅ Complete | Transaction history, uses latest balance |
-| `manual` | Any | Manual | ✅ Complete | Balance entry, isManual flag |
-| `lpl_qfx` | LPL Financial | QFX | 🔜 Planned | |
-| `merrill_csv` | Merrill Lynch | CSV | 🔜 Planned | |
-| `schwab_csv` | Schwab | CSV | 🔜 Planned | |
+| `lpl_csv` | LPL Financial | CSV | ✅ | Multi-account, BOM handling |
+| `cfcu_csv` | Community First CU | CSV | ✅ | Transaction history, uses latest balance per account |
+| `manual` | Any | Manual | ✅ | Cash balance OR fund/stock by market value |
+| `lpl_qfx` | LPL Financial | QFX | 🔜 | |
+| `merrill_csv` | Merrill Lynch | CSV | 🔜 | |
+| `schwab_csv` | Schwab | CSV | 🔜 | |
+
+### Manual Importer — Two Modes
+
+**Cash mode** (ticker=CASH):
+- `shares` = dollar balance
+- `costBasis` = 0
+
+**Fund/Stock mode** (any other ticker):
+- Fetches current price from price_cache or Yahoo Finance
+- `shares` = marketValue / currentPrice (back-calculated)
+- `costBasis` = from statement (total net investments)
+- After upsert: calls `fetchPricesForTickers` to populate price_cache immediately
 
 ### LPL CSV Notes
-- UTF-8 BOM: strip 0xEF 0xBB 0xBF from buffer
-- Security types: `Common Stock` → stock, `Mutual Fund - Open-end` → mutual_fund
+- UTF-8 BOM: strip 0xEF 0xBB 0xBF
+- `Common Stock` → stock, `Mutual Fund - Open-end` → mutual_fund
 - `9999227` CUSIP → CASH, `----` → skip
 
 ### CFCU CSV Notes
-- Transaction history format — NOT current balance export
-- Rows ordered newest first — take first row per Account ID for current balance
-- Account ID in file matches last 4 digits of account number
-- Date format: `MM/DD/YY`
-- Balance format: `"$2,727.67"` with quotes and commas
+- Transaction history, newest row first
+- Take first row per Account ID for current balance
+- Date: `MM/DD/YY`, Balance: `"$2,727.67"`
+
+---
+
+## Financial Accounts (Dave's)
+
+| Account | Institution | Type | Last 4 |
+|---|---|---|---|
+| April's Inherited IRA | lpl | retirement | 9584 |
+| April's Roth IRA | lpl | retirement | 0517 |
+| D and A Non IRA Account | lpl | brokerage | 0878 |
+| Dave's Inherited IRA | lpl | retirement | 0509 |
+| Dave's K-C Roll-Over IRA | lpl | retirement | 0505 |
+| Dave's Roth IRA | lpl | retirement | 0502 |
+| Dave's Stocks | lpl | brokerage | 2461 |
+| CFCU Checking | cfcu | checking | 7845 |
+| CFCU Regular Savings | cfcu | savings | 8400 |
+| CFCU Money Market Savings | cfcu | savings | 8405 |
+| NJSD 403(b) Plan | associated | retirement | 9001 |
+| NJSD Deferred Compensation 457 | associated | retirement | 9000 |
+
+### NJSD Plans (Associated Bank / Schwab platform)
+- Administered by local bank using Schwab technology
+- No CSV/QFX export available — quarterly PDF statements only
+- Fund: VTTHX (Vanguard Target Retire 2035)
+- Import method: Manual Entry → Fund/Stock mode
+- Shares back-calculated from market value / current VTTHX price
+- Cost basis from "Total net investments" on dashboard chart
+
+---
+
+## Cash Account Display Rules
+
+Bank accounts (checking, savings) show `—` for gain/loss and today's change.
+Cost basis = $0 for cash, so gain = balance which is misleading.
+Check account_type in both dashboard header and positions table summary row.
 
 ---
 
@@ -172,55 +185,27 @@ When `syncMode=true` in upload request:
 | PATCH | /api/v1/accounts/:id | Update account |
 | DELETE | /api/v1/accounts/:id | Delete account |
 | GET | /api/v1/positions | All positions with prices |
-| DELETE | /api/v1/positions/:id | Remove position |
+| DELETE | /api/v1/positions/:id | Delete single position |
 | GET | /api/v1/import/importers | List plugins |
 | POST | /api/v1/import/upload | Upload CSV/QFX (multipart) |
-| POST | /api/v1/import/manual | Manual balance entry (JSON) |
+| POST | /api/v1/import/manual | Manual entry (JSON) |
 | GET | /api/v1/import/history | Import history |
 | GET | /api/v1/prices | Cached prices |
 | POST | /api/v1/prices/refresh | Manual price refresh |
 | GET | /api/v1/dashboard | Full dashboard data |
-| GET | /api/v1/watchlist | User watchlist with prices |
+| GET | /api/v1/watchlist | Watchlist with prices |
 | GET | /api/v1/watchlist/search?q= | Symbol search |
 | GET | /api/v1/watchlist/:ticker/history | 30-day sparkline data |
-| POST | /api/v1/watchlist | Add to watchlist |
+| POST | /api/v1/watchlist | Add ticker |
 | PATCH | /api/v1/watchlist/:ticker | Update notes |
-| DELETE | /api/v1/watchlist/:ticker | Remove from watchlist |
+| DELETE | /api/v1/watchlist/:ticker | Remove ticker |
 
-### Route order matters for watchlist
+### Route order — watchlist
 ```javascript
-router.get('/search', requireAuth, watchlistController.search);      // BEFORE /:ticker
-router.get('/:ticker/history', requireAuth, watchlistController.getHistory);
+router.get('/search', ...)         // BEFORE /:ticker
+router.get('/:ticker/history', ...) // BEFORE /:ticker plain
+router.get('/:ticker', ...)
 ```
-
----
-
-## Financial Accounts (Dave's)
-
-| Account | Institution | Type | Last 4 |
-|---|---|---|---|
-| April's Inherited IRA | lpl | retirement | 9584 |
-| April's Roth IRA | lpl | retirement | 0517 |
-| D and A Non IRA Account | lpl | brokerage | 0878 |
-| Dave's Inherited IRA | lpl | retirement | 0509 |
-| Dave's K-C Roll-Over IRA | lpl | retirement | 0505 |
-| Dave's Roth IRA | lpl | retirement | 0502 |
-| Dave's Stocks | lpl | brokerage | 2461 |
-| CFCU Checking | cfcu | checking | 7845 |
-| CFCU Regular Savings | cfcu | savings | 8400 |
-| CFCU Money Market Savings | cfcu | savings | 8405 |
-| April's 403(b) Plan | schwab | retirement | 9999 |
-| April's Deferred Compensation 457 | schwab | retirement | 9999 |
-
----
-
-## Cash Account Display Rules
-
-Bank/cash accounts (type: checking, savings) should show `—` for:
-- Gain/Loss (balance is not a gain — cost basis is $0)
-- Today's Change (cash doesn't move with markets)
-
-Check in Dashboard.jsx `AccountPanelHeader` and `AccountPositionsTable` summary row.
 
 ---
 
@@ -250,8 +235,8 @@ Production works correctly with proper domain.
 
 ## TODO
 
-- [ ] User invite flow (admin invites family members by email)
-- [ ] Portfolio sharing (view-only access between users)
+- [ ] User invite flow (admin invites family by email) ← NEXT
+- [ ] Portfolio sharing (view-only access between users) ← NEXT
 - [ ] LPL QFX importer
 - [ ] Merrill Lynch CSV importer
 - [ ] Schwab CSV importer
@@ -261,6 +246,6 @@ Production works correctly with proper domain.
 - [ ] Account deletion with password confirmation
 - [ ] Mobile view for Accounts page
 - [ ] Profile/settings page
-- [ ] Dockerfile for production deployment
-- [ ] Production Supabase server provisioning
-- [ ] ptraker.com DNS configuration
+- [ ] Dockerfile for production
+- [ ] Production Supabase server
+- [ ] ptraker.com DNS
