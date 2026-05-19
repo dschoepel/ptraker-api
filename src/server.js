@@ -62,6 +62,9 @@ app.use('/api/v1/prices', require('./routes/price.routes'));
 app.use('/api/v1/positions', require('./routes/position.routes'));
 app.use('/api/v1/dashboard', require('./routes/dashboard.routes'));
 app.use('/api/v1/watchlist', require('./routes/watchlist.routes'));
+app.use('/api/v1/admin',  require('./routes/admin.routes'));
+app.use('/api/v1/shares', require('./routes/shares.routes'));
+app.use('/api/v1/user',   require('./routes/user.routes'));
 
 // Start the nightly price refresh cron
 const { startScheduler } = require('./services/scheduler');
