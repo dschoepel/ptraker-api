@@ -110,6 +110,7 @@ const uploadFile = [
             userId,
             accountId: dbAcct.id,
             accountName: dbAcct.name,
+            accountInstitution: dbAcct.institution,
             positions: parsed.positions,
             syncMode: doSync,
             source: importerId,
@@ -361,7 +362,7 @@ const getHistory = async (req, res) => {
 //   manual         → writes cost_basis as provided
 // ---------------------------------------------------------------------------
 async function upsertPositions({
-  supabase, admin, userId, accountId, accountName,
+  supabase, admin, userId, accountId, accountName, accountInstitution,
   positions, syncMode, source, dtAsOf,
 }) {
   const isOFX = source === 'ofx_qfx';
@@ -453,7 +454,12 @@ async function upsertPositions({
       : source === 'manual'    ? 'manual'
       : 'csv';
 
-    const institution = source.replace('_csv', '').replace('_qfx', '').replace('_ofx', '');
+    const INSTITUTION_NAMES = {
+      lpl_csv: 'lpl', ofx_qfx: 'lpl', cfcu_csv: 'cfcu', manual: 'manual',
+    };
+    const institution = accountInstitution
+      || INSTITUTION_NAMES[source]
+      || source.replace('_csv','').replace('_qfx','').replace('_ofx','');
 
     const { error: histErr } = await admin.from('import_history').insert({
       user_id:       userId,
