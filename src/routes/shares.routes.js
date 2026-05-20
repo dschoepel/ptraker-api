@@ -16,6 +16,9 @@ router.post('/', sharesController.createShare);
 // DELETE /api/v1/shares/:id
 router.delete('/:id', sharesController.deleteShare);
 
+// GET /api/v1/shares/discoverable-users
+router.get('/discoverable-users', sharesController.getDiscoverableUsers);
+
 // GET /api/v1/shares/:ownerId/dashboard
 router.get('/:ownerId/dashboard', sharesController.getSharedDashboard);
 

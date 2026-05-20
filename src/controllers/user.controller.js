@@ -140,4 +140,44 @@ const deleteOwnAccount = async (req, res, next) => {
   }
 };
 
-module.exports = { requestUpgrade, getUpgradeRequest, deleteOwnAccount };
+// GET /api/v1/user/export
+const exportData = async (req, res, next) => {
+  try {
+    const supabase = getAdminClient();
+
+    const [accounts, positions, importHistory, watchlist] = await Promise.all([
+      supabase.from('accounts').select('*').eq('user_id', req.user.id),
+      supabase.from('positions').select('*').eq('user_id', req.user.id),
+      supabase.from('import_history').select('*').eq('user_id', req.user.id),
+      supabase.from('watchlist').select('*').eq('user_id', req.user.id),
+    ]);
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_name, role, created_at')
+      .eq('id', req.user.id)
+      .single();
+
+    return res.status(200).json({
+      success: true,
+      export: {
+        exportedAt:    new Date().toISOString(),
+        user: {
+          id:          req.user.id,
+          email:       req.user.email,
+          displayName: profile?.display_name,
+          role:        profile?.role,
+          createdAt:   profile?.created_at,
+        },
+        accounts:      accounts.data  || [],
+        positions:     positions.data || [],
+        importHistory: importHistory.data || [],
+        watchlist:     watchlist.data || [],
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { requestUpgrade, getUpgradeRequest, deleteOwnAccount, exportData };

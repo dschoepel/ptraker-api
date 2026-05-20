@@ -16,4 +16,7 @@ router.get('/upgrade-request', userController.getUpgradeRequest);
 // DELETE /api/v1/user/account
 router.delete('/account', userController.deleteOwnAccount);
 
+// GET /api/v1/user/export
+router.get('/export', userController.exportData);
+
 module.exports = router;

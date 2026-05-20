@@ -57,7 +57,8 @@ const result = await yahooFinance.search(q);
 - **Supabase dev:** Mercury (10.0.10.60)
   - Stack: `supabase-ptraker`, containers: `ptraker-supabase-*`
   - Kong: 8100, Postgres: 5434, Studio: http://10.0.10.60:3002
-  - Templates: `/data/supabase-ptraker/volumes/templates/`
+  - Templates: `/data/supabase-ptraker/volumes/templates/` (invite.html, recovery.html)
+    These are NOT used — GoTrue v2.186 silently skips emails. We send via nodemailer instead.
 
 ### Production (planned)
 - **Jupiter VPS** — ptraker-api (Docker/Portainer) + ptraker-client (Swag static)
@@ -69,7 +70,8 @@ const result = await yahooFinance.search(q);
 ## Database Schema
 
 ### Tables
-- `profiles` — display_name, role (user/admin/viewer), avatar_url, notification_settings JSONB
+- `profiles` — display_name, role (user/admin/viewer), avatar_url,
+  notification_settings JSONB, discoverable BOOLEAN
 - `accounts` — institution, type, account_number_last4, is_active
 - `positions` — ticker, shares, cost_basis, asset_type, as_of_date
 - `price_cache` — shared, ticker PK
@@ -77,69 +79,43 @@ const result = await yahooFinance.search(q);
 - `watchlist` — ticker, asset_name, asset_type, notes, added_from
 - `user_invites` — invited_by, email, role, status
 - `portfolio_shares` — owner_user_id, viewer_user_id, label
-- `role_requests` — user_id, requested_role, message, status
+- `role_requests` — user_id, requested_role, message, status, reviewed_by
 
 ### Views
 - `portfolio_summary` — positions + prices + calculations
-- `account_summary` — per account rollup + `last_imported_at`
+- `account_summary` — per account rollup + last_imported_at
 - `net_worth_summary` — grand totals per user
 
 ### RLS Notes
 - All tables: `(select auth.uid())` pattern
-- `positions` and `accounts`: viewers can read shared data via `portfolio_shares`
-- `profiles.role` CHECK constraint: `('user', 'admin', 'viewer')`
+- `positions` + `accounts`: viewers can read shared data via `portfolio_shares`
+- `profiles.role` CHECK: `('user', 'admin', 'viewer')`
+- `profiles.discoverable` — controls visibility in sharing dropdown
 
 ---
 
-## User Roles
+## GoTrue v2.186 Known Issues
 
-| Role | Can do |
-|---|---|
-| admin | Everything + user management, cannot see other users' financial data via app |
-| user | Own portfolio full access, can share portfolio |
-| viewer | Read-only, sees shared portfolios, can request upgrade |
+**Silently skips ALL outgoing emails** (invite, recovery).
+Workaround for both: use `supabase.auth.admin.generateLink()` + nodemailer.
 
-### Last Admin Protection
-Before demoting or deleting an admin, check count:
+### Password Reset Flow
 ```javascript
-const { count } = await supabase
-  .from('profiles')
-  .select('*', { count: 'exact', head: true })
-  .eq('role', 'admin')
-  .neq('id', userId);
-if (count === 0) return 400 error;
+const { data } = await supabase.auth.admin.generateLink({ type: 'recovery', email });
+const resetLink = data.properties.action_link.replace(/^https:\/\/10\.0\.10\.60\//, 'http://10.0.10.60:8100/');
+const otp = data.properties.email_otp; // 6-digit code shown in email
+// Send via nodemailer with both button link and OTP code displayed
 ```
 
----
-
-## Notifications Service (`src/services/notifications.js`)
-
-Sends via Ntfy and/or email based on admin's `notification_settings` in profiles.
-
-### Ntfy
+### Invite Flow
 ```javascript
-// Headers must be ASCII only — sanitize with:
-const sanitize = (str) => str ? str.replace(/[^\x00-\x7F]/g, '') : str;
+const { data } = await supabase.auth.admin.generateLink({
+  type: 'invite', email,
+  options: { redirectTo: CLIENT_URL/dashboard, data: { intended_role: role } }
+});
+const inviteLink = data.properties.action_link.replace(/^https:\/\/10\.0\.10\.60\//, 'http://10.0.10.60:8100/');
+// Send via nodemailer
 ```
-
-### Email
-Uses nodemailer with SMTP config from `.env`:
-```
-SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SENDER_NAME, SMTP_FROM_EMAIL
-```
-
-### notifyAdmins
-Fetches all admin profiles with notifications enabled, sends to each.
-Called when: role upgrade requested.
-
----
-
-## Invite Flow
-
-GoTrue v2.186 silently skips invite emails — workaround:
-1. Use `supabase.auth.admin.generateLink({ type: 'invite', email, options: { data: { intended_role } } })`
-2. Send branded email ourselves via nodemailer
-3. Fix dev URL: `.replace(/^https:\/\/10\.0\.10\.60\//, 'http://10.0.10.60:8100/')`
 
 ### Profile trigger — reads intended_role from metadata:
 ```sql
@@ -159,6 +135,21 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 ---
 
+## Notifications Service (`src/services/notifications.js`)
+
+```javascript
+// Ntfy headers must be ASCII — sanitize:
+const sanitize = (str) => str ? str.replace(/[^\x00-\x7F]/g, '') : str;
+
+// Send to all admins with notifications enabled:
+notifyAdmins(supabase, { title, message, subject, html, priority, tags })
+```
+
+Email uses nodemailer with env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+`SMTP_SENDER_NAME`, `SMTP_FROM_EMAIL`.
+
+---
+
 ## API Endpoints
 
 | Method | Path | Description |
@@ -168,8 +159,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 | POST | /api/v1/auth/logout | Logout |
 | POST | /api/v1/auth/refresh | Refresh token |
 | GET | /api/v1/auth/profile | Get profile |
-| PATCH | /api/v1/auth/profile | Update profile |
-| POST | /api/v1/auth/forgot-password | Send reset email |
+| PATCH | /api/v1/auth/profile | Update profile (displayName, avatarUrl, discoverable) |
+| POST | /api/v1/auth/forgot-password | Send reset email via nodemailer |
 | POST | /api/v1/auth/reset-password | Set new password |
 | GET | /api/v1/accounts | List accounts |
 | POST | /api/v1/accounts | Create account |
@@ -189,35 +180,50 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 | POST | /api/v1/watchlist | Add ticker |
 | PATCH | /api/v1/watchlist/:ticker | Update notes |
 | DELETE | /api/v1/watchlist/:ticker | Remove ticker |
-| GET | /api/v1/admin/users | List users (admin) |
-| POST | /api/v1/admin/invite | Invite user (admin) |
-| PATCH | /api/v1/admin/users/:id | Change role (admin) |
-| DELETE | /api/v1/admin/users/:id | Delete user (admin) |
-| GET | /api/v1/admin/role-requests | Pending requests (admin) |
-| PATCH | /api/v1/admin/role-requests/:id | Approve/deny (admin) |
-| GET | /api/v1/admin/notification-settings | Get settings (admin) |
-| PATCH | /api/v1/admin/notification-settings | Save settings (admin) |
-| POST | /api/v1/admin/notification-settings/test | Test notification (admin) |
+| GET | /api/v1/admin/users | List users |
+| POST | /api/v1/admin/invite | Invite user |
+| PATCH | /api/v1/admin/users/:id | Change role |
+| DELETE | /api/v1/admin/users/:id | Delete user |
+| GET | /api/v1/admin/role-requests | Pending requests |
+| PATCH | /api/v1/admin/role-requests/:id | Approve/deny |
+| GET | /api/v1/admin/notification-settings | Get settings |
+| PATCH | /api/v1/admin/notification-settings | Save settings |
+| POST | /api/v1/admin/notification-settings/test | Test notification |
 | GET | /api/v1/shares | Portfolio shares |
-| POST | /api/v1/shares | Create share |
+| GET | /api/v1/shares/discoverable-users | Users with discoverable=true |
+| POST | /api/v1/shares | Create share (viewerId or viewerEmail) |
 | DELETE | /api/v1/shares/:id | Remove share |
-| GET | /api/v1/shares/:ownerId/dashboard | Shared dashboard |
+| GET | /api/v1/shares/:ownerId/dashboard | Shared dashboard data |
 | POST | /api/v1/user/request-upgrade | Request role upgrade |
 | GET | /api/v1/user/upgrade-request | Check upgrade status |
+| GET | /api/v1/user/export | Export all user data as JSON |
 | DELETE | /api/v1/user/account | Delete own account |
+
+### Route order — shares
+```javascript
+router.get('/discoverable-users', ...); // BEFORE /:ownerId
+router.get('/:ownerId/dashboard', ...);
+```
+
+### Route order — watchlist
+```javascript
+router.get('/search', ...);            // BEFORE /:ticker
+router.get('/:ticker/history', ...);
+router.get('/:ticker', ...);
+```
 
 ---
 
 ## Import Plugins
 
-| Plugin | Institution | Format | Status |
-|---|---|---|---|
-| `lpl_csv` | LPL Financial | CSV | ✅ |
-| `cfcu_csv` | Community First CU | CSV | ✅ |
-| `manual` | Any | Manual | ✅ |
-| `lpl_qfx` | LPL Financial | QFX | 🔜 |
-| `merrill_csv` | Merrill Lynch | CSV | 🔜 |
-| `schwab_csv` | Schwab | CSV | 🔜 |
+| Plugin | Institution | Status |
+|---|---|---|
+| `lpl_csv` | LPL Financial | ✅ |
+| `cfcu_csv` | Community First CU | ✅ |
+| `manual` | Any | ✅ |
+| `lpl_qfx` | LPL Financial | 🔜 |
+| `merrill_csv` | Merrill Lynch | 🔜 |
+| `schwab_csv` | Schwab | 🔜 |
 
 ---
 
@@ -235,26 +241,29 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 | CFCU Checking | cfcu | checking | 7845 |
 | CFCU Regular Savings | cfcu | savings | 8400 |
 | CFCU Money Market Savings | cfcu | savings | 8405 |
-| NJSD 403(b) Plan | associated | retirement | 9001 |
-| NJSD Deferred Compensation 457 | associated | retirement | 9000 |
+| NJSD 403(b) Plan | associated | retirement | 9001 — VTTHX |
+| NJSD Deferred Compensation 457 | associated | retirement | 9000 — VTTHX |
 
-NJSD plans hold VTTHX (Vanguard Target Retire 2035).
-Import via Manual Entry → Fund/Stock mode, quarterly from dashboard screenshot.
+NJSD plans: import via Manual Entry → Fund/Stock, quarterly from dashboard screenshot.
+Cost basis from "Total net investments" on the plan website chart.
 
 ---
 
-## Dev Issues
+## User Role Management
 
-### Email link URL fix
-GoTrue builds links from request Host header — shows `https://10.0.10.60` in dev.
-Password reset: manually change to `http://10.0.10.60:8100` in browser.
-Invite: fixed in `admin.controller.js` inviteUser function.
+### Last Admin Protection (applies to both delete and demote):
+```javascript
+const { count } = await supabase
+  .from('profiles')
+  .select('*', { count: 'exact', head: true })
+  .eq('role', 'admin')
+  .neq('id', userId);
+if (count === 0) return 400 error;
+```
 
-### GoTrue v2.186 invite email bug
-Does not send invite emails. Workaround: use `generateLink` + nodemailer.
-
-### Email autoconfirm
-`ENABLE_EMAIL_AUTOCONFIRM=false` — required for invite emails to work properly.
+### Portfolio Sharing — createShare accepts:
+- `viewerId` — existing user ID (from discoverable list)
+- `viewerEmail` — new user email (auto-invites as viewer + creates share)
 
 ---
 
@@ -263,7 +272,6 @@ Does not send invite emails. Workaround: use `generateLink` + nodemailer.
 - [ ] LPL QFX importer
 - [ ] Merrill Lynch CSV importer
 - [ ] Schwab CSV importer
-- [ ] OTP password reset code entry
 - [ ] Dockerfile for production
 - [ ] Production Supabase server
 - [ ] ptraker.com DNS
