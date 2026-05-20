@@ -1,396 +1,491 @@
+/**
+ * Import Controller
+ * Handles CSV, OFX/QFX, and manual position imports.
+ */
+
 'use strict';
 
-const { getAdminClient } = require('../lib/supabase');
-const { getImporter, listImporters } = require('../importers');
+const multer = require('multer');
+const path = require('path');
+const { getAnonClient, getAdminClient } = require('../lib/supabase');
+const { fetchPricesForTickers } = require('../services/priceRefresh');
 const logger = require('../utils/logger');
 
-// =============================================================================
-// Import Controller
-// =============================================================================
+// Importers
+const lplCsvImporter = require('../importers/lpl_csv');
+const cfcuCsvImporter = require('../importers/cfcu.csv');
+const ofxQfxImporter = require('../importers/ofx_qfx');
+const manualImporter = require('../importers/manual');
 
-const getImporters = (req, res) => {
-  return res.status(200).json({
-    success: true,
-    importers: listImporters(),
-  });
+const IMPORTERS = {
+  lpl_csv: lplCsvImporter,
+  cfcu_csv: cfcuCsvImporter,
+  ofx_qfx: ofxQfxImporter,
+  manual: manualImporter,
 };
 
-// -----------------------------------------------------------------------------
-// POST /api/v1/import/upload
-// Form fields:
-//   file       — CSV/QFX file (multipart)
-//   importerId — which parser to use e.g. 'lpl_csv'
-//   accountId  — optional: force all positions into one account
-//   syncMode   — optional: 'true' to remove positions no longer in file
-// -----------------------------------------------------------------------------
-const uploadAndImport = async (req, res, next) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No file uploaded' });
-    }
+// Multer — in-memory, 20MB limit
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
 
+// ---------------------------------------------------------------------------
+// GET /import/importers
+// Returns list of available importers for the UI dropdown
+// ---------------------------------------------------------------------------
+const getImporters = (req, res) => {
+  const list = Object.values(IMPORTERS)
+    .filter(i => i.id !== 'manual')
+    .map(i => ({
+      id: i.id,
+      name: i.name,
+      description: i.description,
+      fileTypes: i.fileTypes,
+      institutions: i.institutions,
+      multiAccount: i.multiAccount === true,
+    }));
+  res.json({ importers: list });
+};
+
+// ---------------------------------------------------------------------------
+// POST /import/upload
+// File import — CSV or OFX/QFX
+// Body: importerId, accountId (optional for OFX multi-account), syncMode
+// ---------------------------------------------------------------------------
+const uploadFile = [
+  upload.single('file'),
+  async (req, res) => {
+    const userId = req.user.id;
     const { importerId, accountId, syncMode } = req.body;
-    const shouldSync = syncMode === 'true';
+    const doSync = syncMode === 'true' || syncMode === true;
 
-    if (!importerId) {
-      return res.status(400).json({ success: false, message: 'importerId is required' });
-    }
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    if (!importerId) return res.status(400).json({ message: 'importerId is required' });
 
-    const importer = getImporter(importerId);
-    if (!importer) {
-      return res.status(400).json({
-        success: false,
-        message: `Unknown importer: ${importerId}`,
-      });
-    }
+    const importer = IMPORTERS[importerId];
+    if (!importer) return res.status(400).json({ message: `Unknown importer: ${importerId}` });
 
-    logger.info('Import started', {
-      userId: req.user.id,
-      importerId,
-      filename: req.file.originalname,
-      syncMode: shouldSync,
-    });
+    const supabase = getAnonClient();
+    const admin = getAdminClient();
 
-    const { positions, skipped, errors } = importer.parse(req.file.buffer);
+    try {
+      // -----------------------------------------------------------------------
+      // Multi-account path — OFX/QFX and LPL all-accounts CSV
+      // Any importer with multiAccount:true uses parseXxx + matchAccounts
+      // -----------------------------------------------------------------------
+      const isMultiAccount = importer.multiAccount === true;
 
-    if (positions.length === 0) {
-      return res.status(422).json({
-        success: false,
-        message: 'No valid positions found in file',
-        skipped: skipped.length,
-        errors,
-      });
-    }
+      if (isMultiAccount) {
+        // All multi-account importers expose parseMulti(buffer)
+        // returning { accounts: [{ acctId, positions[] }], errors[] }
+        const { accounts: parsedAccounts, errors: parseErrors } =
+          importer.parseMulti(req.file.buffer);
 
-    const supabase = getAdminClient();
+        // Load all user accounts — use admin client to bypass RLS, include inactive
+        const { data: dbAccounts, error: acctErr } = await admin
+          .from('accounts')
+          .select('id, name, account_number_last4, institution, is_active')
+          .eq('user_id', userId);
 
-    // Load user's accounts for matching
-    const { data: userAccounts, error: accountsError } = await supabase
-      .from('accounts')
-      .select('id, name, institution, account_number_last4')
-      .eq('user_id', req.user.id)
-      .eq('is_active', true);
+        if (acctErr) throw acctErr;
 
-    if (accountsError) return next(accountsError);
+        const { matched, unmatched } = importer.matchAccounts(parsedAccounts, dbAccounts || []);
 
-    const accountMap = {};
-    userAccounts.forEach(acc => {
-      if (acc.account_number_last4) {
-        accountMap[acc.account_number_last4] = acc.id;
-      }
-    });
-
-    let rowsImported = 0;
-    let rowsSkipped = skipped.length;
-    const importErrors = [...errors];
-    const positionsByAccount = {};
-
-    for (const position of positions) {
-      let targetAccountId = accountId || null;
-
-      if (!targetAccountId && position.accountNumber) {
-        const last4 = position.accountNumber.toString().slice(-4);
-        targetAccountId = accountMap[last4] || null;
-      }
-
-      if (!targetAccountId) {
-        rowsSkipped++;
-        importErrors.push({
-          ticker: position.ticker,
-          message: `No matching account for account number ending in ${position.accountNumber?.toString().slice(-4)}`,
-          type: 'account_not_found',
-        });
-        continue;
-      }
-
-      if (!positionsByAccount[targetAccountId]) {
-        positionsByAccount[targetAccountId] = [];
-      }
-      positionsByAccount[targetAccountId].push({ ...position, resolvedAccountId: targetAccountId });
-    }
-
-    const asOfDate = positions.find(p => p.asOfDate)?.asOfDate || null;
-    const removedPositions = []; // track positions removed by sync
-
-    for (const [targetAccountId, accountPositions] of Object.entries(positionsByAccount)) {
-      // Upsert positions
-      const upsertRows = accountPositions.map(p => ({
-        user_id:       req.user.id,
-        account_id:    targetAccountId,
-        ticker:        p.ticker,
-        asset_name:    p.assetName,
-        asset_type:    p.assetType,
-        shares:        p.shares,
-        cost_basis:    p.costBasis || 0,
-        import_source: p.importSource,
-        imported_at:   new Date().toISOString(),
-        as_of_date:    p.asOfDate,
-      }));
-
-      const { error: upsertError } = await supabase
-        .from('positions')
-        .upsert(upsertRows, { onConflict: 'account_id,ticker', ignoreDuplicates: false });
-
-      if (upsertError) {
-        logger.error('Upsert failed', { accountId: targetAccountId, error: upsertError.message });
-        importErrors.push({ accountId: targetAccountId, message: upsertError.message, type: 'upsert_error' });
-      } else {
-        rowsImported += upsertRows.length;
-      }
-
-      // ==========================================================================
-      // Sync-delete — remove positions no longer in the file (opt-in)
-      // ==========================================================================
-      if (shouldSync) {
-        const importedTickers = accountPositions.map(p => p.ticker);
-
-        // Find positions in this account not in the imported file
-        const { data: existingPositions } = await supabase
-          .from('positions')
-          .select('id, ticker, asset_name, asset_type')
-          .eq('account_id', targetAccountId)
-          .eq('user_id', req.user.id)
-          .not('ticker', 'in', `(${importedTickers.map(t => `"${t}"`).join(',')})`);
-
-        if (existingPositions && existingPositions.length > 0) {
-          // Get current prices for removed positions
-          const removedTickers = existingPositions.map(p => p.ticker);
-          const { data: prices } = await supabase
-            .from('price_cache')
-            .select('ticker, price, change_percent')
-            .in('ticker', removedTickers);
-
-          const priceMap = {};
-          (prices || []).forEach(p => { priceMap[p.ticker] = p; });
-
-          // Delete the positions
-          await supabase
-            .from('positions')
-            .delete()
-            .eq('account_id', targetAccountId)
-            .eq('user_id', req.user.id)
-            .not('ticker', 'in', `(${importedTickers.map(t => `"${t}"`).join(',')})`);
-
-          // Track removed positions with price data for the response
-          existingPositions.forEach(p => {
-            removedPositions.push({
-              ticker:        p.ticker,
-              assetName:     p.asset_name,
-              assetType:     p.asset_type,
-              currentPrice:  priceMap[p.ticker]?.price || null,
-              changePercent: priceMap[p.ticker]?.change_percent || null,
-              accountId:     targetAccountId,
-            });
-          });
-
-          logger.info('Sync removed positions', {
-            accountId: targetAccountId,
-            removed: existingPositions.map(p => p.ticker),
+        if (matched.length === 0) {
+          return res.status(400).json({
+            message: 'No accounts in this file matched your portfolio accounts. ' +
+              'Check that account last-4 digits match.',
+            unmatchedAccountIds: unmatched,
           });
         }
+
+        const results = [];
+        const allTickers = new Set();
+
+        for (const { parsed, dbAcct } of matched) {
+          const result = await upsertPositions({
+            supabase,
+            admin,
+            userId,
+            accountId: dbAcct.id,
+            accountName: dbAcct.name,
+            positions: parsed.positions,
+            syncMode: doSync,
+            source: importerId,
+            dtAsOf: parsed.dtAsOf,
+          });
+          results.push({ accountId: dbAcct.id, accountName: dbAcct.name, ...result });
+          result.tickers.forEach(t => allTickers.add(t));
+        }
+
+        // Refresh prices for all new tickers
+        if (allTickers.size > 0) {
+          await fetchPricesForTickers([...allTickers]).catch(e =>
+          logger.warn('Price refresh after multi-account import failed:', e.message)
+          );
+        }
+
+        return res.json({
+          success: true,
+          matchedAccounts: matched.length,
+          unmatchedAccountIds: unmatched,
+          parseWarnings: parseErrors,
+          results,
+        });
       }
+
+      // -----------------------------------------------------------------------
+      // CSV path — single account, uses parse(buffer) on the importer
+      // -----------------------------------------------------------------------
+      if (!accountId) {
+        return res.status(400).json({ message: 'accountId is required for CSV imports' });
+      }
+
+      // Verify account belongs to user
+      const { data: acct, error: acctErr } = await supabase
+        .from('accounts')
+        .select('id, name')
+        .eq('id', accountId)
+        .eq('user_id', userId)
+        .single();
+
+      if (acctErr || !acct) {
+        return res.status(404).json({ message: 'Account not found' });
+      }
+
+      const rows = await importer.parse(req.file.buffer);
+
+      const result = await upsertPositions({
+        supabase,
+        admin,
+        userId,
+        accountId,
+        accountName: acct.name,
+        positions: rows,
+        syncMode: doSync,
+        source: importerId,
+      });
+
+      if (result.tickers.length > 0) {
+        await fetchPricesForTickers(result.tickers).catch(e =>
+          logger.warn('Price refresh after CSV import failed:', e.message)
+        );
+      }
+
+      return res.json({ success: true, ...result });
+
+    } catch (err) {
+      logger.error('Import error:', err);
+      return res.status(500).json({ message: err.message || 'Import failed' });
     }
+  },
+];
 
-    // Log import history
-    const status = importErrors.length === 0 ? 'success'
-                 : rowsImported === 0        ? 'failed'
-                 : 'partial';
+// ---------------------------------------------------------------------------
+// POST /import/manual
+// Manual position entry — cash balance or fund/stock by market value
+// Body: accountId, mode ('cash'|'position'), ticker, shares|marketValue, costBasis, asOfDate
+// ---------------------------------------------------------------------------
+const importManual = async (req, res) => {
+  const userId = req.user.id;
+  const { accountId, mode, ticker, shares, marketValue, costBasis, asOfDate } = req.body;
 
-    const primaryAccountId = accountId || Object.keys(positionsByAccount)[0] || null;
-
-    await supabase.from('import_history').insert({
-      user_id:       req.user.id,
-      account_id:    primaryAccountId,
-      filename:      req.file.originalname,
-      file_format:   'csv',
-      institution:   importer.institution,
-      status,
-      rows_parsed:   positions.length + skipped.length,
-      rows_imported: rowsImported,
-      rows_skipped:  rowsSkipped,
-      error_detail:  importErrors.length > 0 ? JSON.stringify(importErrors) : null,
-      as_of_date:    asOfDate,
-    });
-
-    logger.info('Import complete', {
-      userId: req.user.id,
-      filename: req.file.originalname,
-      rowsImported,
-      rowsSkipped,
-      removed: removedPositions.length,
-      status,
-    });
-
-    return res.status(200).json({
-      success: true,
-      status,
-      filename: req.file.originalname,
-      rowsImported,
-      rowsSkipped,
-      errors: importErrors,
-      asOfDate,
-      removedPositions,  // positions removed by sync-delete
-    });
-
-  } catch (err) {
-    next(err);
+  if (!accountId || !mode) {
+    return res.status(400).json({ message: 'accountId and mode are required' });
   }
-};
 
-// -----------------------------------------------------------------------------
-// GET /api/v1/import/history
-// -----------------------------------------------------------------------------
-const getHistory = async (req, res, next) => {
+  const supabase = getAnonClient();
+  const admin = getAdminClient();
+
   try {
-    const supabase = getAdminClient();
+    // Verify account
+    const { data: acct, error: acctErr } = await supabase
+      .from('accounts')
+      .select('id, name, type')
+      .eq('id', accountId)
+      .eq('user_id', userId)
+      .single();
 
-    const { data: history, error } = await supabase
-      .from('import_history')
-      .select(`
-        id, filename, file_format, institution, status,
-        rows_parsed, rows_imported, rows_skipped,
-        error_detail, as_of_date, imported_at,
-        account:account_id ( id, name )
-      `)
-      .eq('user_id', req.user.id)
-      .order('imported_at', { ascending: false })
-      .limit(50);
+    if (acctErr || !acct) return res.status(404).json({ message: 'Account not found' });
 
-    if (error) return next(error);
+    let position;
 
-    return res.status(200).json({ success: true, count: history.length, history });
+    if (mode === 'cash') {
+      // Cash balance entry
+      const balance = parseFloat(shares || marketValue || 0);
+      if (isNaN(balance) || balance < 0) {
+        return res.status(400).json({ message: 'Invalid balance amount' });
+      }
+      position = {
+        ticker: 'CASH',
+        asset_name: 'Cash',
+        asset_type: 'cash',
+        shares: balance,
+        cost_basis: 0,
+        as_of_date: asOfDate || new Date().toISOString().split('T')[0],
+      };
+    } else {
+      // Fund/stock entry by market value — back-calculate shares
+      if (!ticker) return res.status(400).json({ message: 'ticker is required' });
 
-  } catch (err) {
-    next(err);
-  }
-};
+      const mv = parseFloat(marketValue || 0);
+      if (isNaN(mv) || mv <= 0) {
+        return res.status(400).json({ message: 'marketValue must be positive' });
+      }
 
-// -----------------------------------------------------------------------------
-// POST /api/v1/import/manual
-// Body: { importerId, accountId, ticker, balance, assetName, assetType }
-// Handles manual balance/position entry without a file upload
-// -----------------------------------------------------------------------------
-const manualImport = async (req, res, next) => {
-  try {
-    const {
-      importerId, accountId, ticker,
-      balance, marketValue, shares, costBasis,
-      assetName, assetType,
-    } = req.body;
+      // Get current price from cache or Yahoo Finance
+      let currentPrice = null;
+      const { data: cached } = await admin
+        .from('price_cache')
+        .select('price')
+        .eq('ticker', ticker.toUpperCase())
+        .single();
 
-    if (!accountId) {
-      return res.status(400).json({ success: false, message: 'accountId is required' });
-    }
-    if (!ticker) {
-      return res.status(400).json({ success: false, message: 'ticker is required' });
-    }
-    if (!balance && !marketValue && !shares) {
-      return res.status(400).json({ success: false, message: 'balance, marketValue, or shares is required' });
-    }
-
-    const importer = getImporter(importerId || 'manual');
-    if (!importer || !importer.isManual) {
-      return res.status(400).json({ success: false, message: 'Invalid manual importer' });
-    }
-
-    // For non-cash tickers, fetch current price to back-calculate shares from market value
-    let currentPrice = null;
-    const upperTicker = ticker.toUpperCase();
-    if (upperTicker !== 'CASH' && !shares) {
-      try {
-        const supabase = getAdminClient();
-        const { data: cached } = await supabase
-          .from('price_cache')
-          .select('price')
-          .eq('ticker', upperTicker)
-          .single();
-
-        if (cached?.price) {
-          currentPrice = cached.price;
-        } else {
+      if (cached?.price) {
+        currentPrice = cached.price;
+      } else {
+        // Attempt Yahoo Finance lookup
+        try {
           const YahooFinance = require('yahoo-finance2').default;
           const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
-          const quote = await yf.quote(upperTicker);
-          if (quote?.regularMarketPrice) {
-            currentPrice = quote.regularMarketPrice;
-          }
+          const quote = await yf.quote(ticker.toUpperCase());
+          currentPrice = quote?.regularMarketPrice || null;
+        } catch {
+          // Price not available — user must provide shares directly
         }
-      } catch {
-        // Non-fatal — will fall back to market value as shares
       }
-    }
 
-    const { positions, errors } = importer.parse({
-      ticker, balance, marketValue, shares, costBasis, assetName, assetType, currentPrice,
-    });
+      const calculatedShares = currentPrice
+        ? mv / currentPrice
+        : parseFloat(shares || 0);
 
-    if (positions.length === 0) {
-      return res.status(422).json({ success: false, message: 'No valid position data', errors });
-    }
-
-    const supabase = getAdminClient();
-    const position = positions[0];
-
-    const { error: upsertError } = await supabase
-      .from('positions')
-      .upsert({
-        user_id:       req.user.id,
-        account_id:    accountId,
-        ticker:        position.ticker,
-        asset_name:    position.assetName,
-        asset_type:    position.assetType,
-        shares:        position.shares,
-        cost_basis:    position.costBasis || 0,
-        import_source: 'manual',
-        imported_at:   new Date().toISOString(),
-        as_of_date:    position.asOfDate,
-      }, { onConflict: 'account_id,ticker', ignoreDuplicates: false });
-
-    if (upsertError) return next(upsertError);
-
-    // Refresh price cache for non-cash tickers so dashboard shows
-    // live price immediately without needing a manual refresh
-    if (upperTicker !== 'CASH') {
-      try {
-        const { fetchPricesForTickers } = require('../services/priceRefresh');
-        await fetchPricesForTickers([upperTicker]);
-      } catch {
-        // Non-fatal — price will update on next scheduled refresh
+      if (calculatedShares <= 0) {
+        return res.status(400).json({
+          message: currentPrice
+            ? 'Could not calculate shares from market value'
+            : 'Could not fetch current price. Please enter shares directly.',
+          currentPrice,
+        });
       }
+
+      position = {
+        ticker: ticker.toUpperCase(),
+        asset_name: ticker.toUpperCase(),
+        asset_type: 'stock',  // will be refined by price refresh
+        shares: calculatedShares,
+        cost_basis: parseFloat(costBasis || 0),
+        as_of_date: asOfDate || new Date().toISOString().split('T')[0],
+        current_price: currentPrice,
+      };
     }
 
-    // Log to import history
-    await supabase.from('import_history').insert({
-      user_id:       req.user.id,
-      account_id:    accountId,
-      filename:      `Manual entry — ${position.ticker}`,
-      file_format:   'manual',
-      institution:   'manual',
-      status:        'success',
-      rows_parsed:   1,
-      rows_imported: 1,
-      rows_skipped:  0,
-      as_of_date:    position.asOfDate,
-    });
-
-    logger.info('Manual position entry', {
-      userId: req.user.id,
+    // Upsert position
+    const result = await upsertPositions({
+      supabase,
+      admin,
+      userId,
       accountId,
-      ticker: position.ticker,
-      balance,
+      accountName: acct.name,
+      positions: [position],
+      syncMode: false,
+      source: 'manual',
     });
 
-    return res.status(200).json({
-      success: true,
-      status: 'success',
-      rowsImported: 1,
-      ticker: position.ticker,
-      balance: position.shares,
-    });
+    // Refresh price cache for non-cash
+    if (position.asset_type !== 'cash') {
+      await fetchPricesForTickers([position.ticker]).catch(() => {});
+    }
+
+    return res.json({ success: true, ...result });
 
   } catch (err) {
-    next(err);
+    logger.error('Manual import error:', err);
+    return res.status(500).json({ message: err.message || 'Import failed' });
   }
 };
 
-module.exports = { getImporters, uploadAndImport, manualImport, getHistory };
+// ---------------------------------------------------------------------------
+// GET /import/history
+// Recent import history for the user
+// ---------------------------------------------------------------------------
+const getHistory = async (req, res) => {
+  const userId = req.user.id;
+  const admin = getAdminClient();
+
+  try {
+    const { data: history, error } = await admin
+      .from('import_history')
+      .select('id, account_id, filename, file_format, institution, status, rows_parsed, rows_imported, rows_skipped, error_detail, as_of_date, imported_at')
+      .eq('user_id', userId)
+      .order('imported_at', { ascending: false, nullsFirst: false })
+      .limit(50);
+
+    if (error) {
+      logger.error('getHistory query error:', error.code, error.message, error.details, error.hint);
+      // Return empty rather than 500 — history failure shouldn't break the page
+      return res.json({ history: [] });
+    }
+
+    // Enrich with account names
+    const accountIds = [...new Set((history || []).map(h => h.account_id).filter(Boolean))];
+    let accountMap = {};
+    if (accountIds.length > 0) {
+      const { data: accts } = await admin
+        .from('accounts')
+        .select('id, name')
+        .in('id', accountIds);
+      (accts || []).forEach(a => { accountMap[a.id] = a.name; });
+    }
+
+    const result = (history || []).map(h => ({
+      ...h,
+      account: h.account_id ? { id: h.account_id, name: accountMap[h.account_id] || null } : null,
+    }));
+
+    res.json({ history: result });
+  } catch (err) {
+    logger.error('getHistory exception:', err.message);
+    res.json({ history: [] });
+  }
+};
+
+
+// ---------------------------------------------------------------------------
+// Internal helper — upsert positions for one account
+// Returns { rowsImported, rowsRemoved, tickers, removedPositions }
+//
+// source behaviour:
+//   CSV importers  → writes cost_basis (has it from the file)
+//   ofx_qfx        → preserves existing cost_basis on conflict (OFX has no cost basis)
+//   manual         → writes cost_basis as provided
+// ---------------------------------------------------------------------------
+async function upsertPositions({
+  supabase, admin, userId, accountId, accountName,
+  positions, syncMode, source, dtAsOf,
+}) {
+  const isOFX = source === 'ofx_qfx';
+
+  // Build upsert rows
+  const rows = positions.map(p => ({
+    user_id: userId,
+    account_id: accountId,
+    ticker: p.ticker,
+    asset_name: p.asset_name || p.ticker,
+    asset_type: p.asset_type || 'stock',
+    shares: p.shares,
+    cost_basis: p.cost_basis ?? 0,
+    as_of_date: dtAsOf || p.as_of_date || new Date().toISOString().split('T')[0],
+  }));
+
+  if (isOFX) {
+    // OFX: for existing positions only update shares/price-related fields, never cost_basis.
+    // Strategy: insert new rows normally (cost_basis=0), update existing ones without touching cost_basis.
+
+    // 1. Find which tickers already exist for this account
+    const incomingTickers = rows.map(r => r.ticker);
+    const { data: existing } = await admin
+      .from('positions')
+      .select('id, ticker, cost_basis')
+      .eq('account_id', accountId)
+      .in('ticker', incomingTickers);
+
+    const existingMap = {};
+    (existing || []).forEach(e => { existingMap[e.ticker] = e; });
+
+    const toInsert = rows.filter(r => !existingMap[r.ticker]);
+    const toUpdate = rows.filter(r =>  existingMap[r.ticker]);
+
+    // Insert new positions (cost_basis=0 is fine for brand new ones)
+    if (toInsert.length > 0) {
+      const { error: insertErr } = await admin.from('positions').insert(toInsert);
+      if (insertErr) throw insertErr;
+    }
+
+    // Update existing positions — preserve their cost_basis
+    for (const row of toUpdate) {
+      const existingRow = existingMap[row.ticker];
+      const { error: updateErr } = await admin
+        .from('positions')
+        .update({
+          shares: row.shares,
+          asset_name: row.asset_name,
+          asset_type: row.asset_type,
+          as_of_date: row.as_of_date,
+          // cost_basis intentionally omitted — preserve existing value
+        })
+        .eq('id', existingRow.id);
+      if (updateErr) throw updateErr;
+    }
+  } else {
+    // CSV / manual: full upsert including cost_basis
+    const { error: upsertErr } = await admin
+      .from('positions')
+      .upsert(rows, { onConflict: 'account_id,ticker' });
+    if (upsertErr) throw upsertErr;
+  }
+
+  const tickers = [...new Set(rows.map(r => r.ticker).filter(t => t !== 'CASH'))];
+
+  // Sync-delete: remove positions not in this import
+  let removedPositions = [];
+  if (syncMode) {
+    const incomingTickers = rows.map(r => r.ticker);
+
+    const { data: existing } = await admin
+      .from('positions')
+      .select('id, ticker')
+      .eq('account_id', accountId);
+
+    const toRemove = (existing || []).filter(p => !incomingTickers.includes(p.ticker));
+
+    if (toRemove.length > 0) {
+      const removeIds = toRemove.map(p => p.id);
+      await admin.from('positions').delete().in('id', removeIds);
+      removedPositions = toRemove;
+    }
+  }
+
+  // Log import history
+  try {
+    const fileFormat = source.includes('qfx') ? 'qfx'
+      : source.includes('ofx') ? 'ofx'
+      : source === 'manual'    ? 'manual'
+      : 'csv';
+
+    const institution = source.replace('_csv', '').replace('_qfx', '').replace('_ofx', '');
+
+    const { error: histErr } = await admin.from('import_history').insert({
+      user_id:       userId,
+      account_id:    accountId,
+      filename:      accountName ? `${source} — ${accountName}` : `${source} import`,
+      file_format:   fileFormat,
+      institution:   institution,
+      status:        'success',
+      rows_parsed:   rows.length,
+      rows_imported: rows.length,
+      rows_skipped:  0,
+      as_of_date:    dtAsOf || new Date().toISOString().split('T')[0],
+      imported_at:   new Date().toISOString(),
+    });
+    if (histErr) {
+      logger.warn('History insert failed:', histErr.code, histErr.message);
+    }
+  } catch (e) {
+    logger.error('History insert exception:', e.message);
+  }
+
+  return {
+    rowsImported: rows.length,
+    rowsRemoved: removedPositions.length,
+    tickers,
+    removedPositions,
+  };
+}
+
+module.exports = {
+  getImporters,
+  uploadFile,
+  importManual,
+  getHistory,
+};

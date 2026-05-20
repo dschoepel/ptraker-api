@@ -1,23 +1,13 @@
-'use strict';
+/**
+ * Importer registry
+ * Each importer exports: id, name, description, fileTypes, institutions
+ * CSV importers also export: parse(buffer) → rows[]
+ * OFX/QFX importer exports: parseOFXFile(buffer), matchAccounts(parsed, dbAccounts)
+ */
 
-const importers = {
-  lpl_csv:  require('./lpl.csv'),
-  cfcu_csv: require('./cfcu.csv'),
+module.exports = {
+  lpl_csv:  require('./lpl_csv'),
+  cfcu_csv: require('./cfcu_csv'),
+  ofx_qfx:  require('./ofx_qfx'),
   manual:   require('./manual'),
-  // lpl_qfx:     require('./lpl.qfx'),      // planned
-  // merrill_csv: require('./merrill.csv'),   // planned
-  // schwab_csv:  require('./schwab.csv'),    // planned
 };
-
-const getImporter = (importerId) => importers[importerId] || null;
-
-const listImporters = () => Object.values(importers).map(imp => ({
-  id:          imp.id,
-  name:        imp.name,
-  accepts:     imp.accepts,
-  institution: imp.institution,
-  description: imp.description,
-  isManual:    imp.isManual || false,
-}));
-
-module.exports = { getImporter, listImporters };
