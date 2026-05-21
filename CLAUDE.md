@@ -104,7 +104,7 @@ All file importers must export:
 |---|---|---|---|
 | `lpl_csv` | LPL Financial CSV | ✅ | Handles quoted newlines in descriptions |
 | `ofx_qfx` | Any OFX/QFX | ✅ | Investment (INVSTMTMSGSRSV1) + Bank (BANKMSGSRSV1) |
-| `cfcu_csv` | CFCU transaction CSV | ❌ | Single account, uses first row balance |
+| `cfcu_csv` | CFCU transaction CSV | ✅ | Multi-account, auto-matches by last4, uses first row balance per account |
 | `manual` | No file | ❌ | Cash balance or fund/stock by market value |
 
 ### OFX/QFX Parser — Two Message Types

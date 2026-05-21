@@ -21,8 +21,7 @@
 
 const Papa = require('papaparse');
 
-// Parse currency string to float
-// Handles: "$2,727.67", "-$231.34", "$60,589.83"
+// Parse currency string to float — handles "$2,727.67", "-$231.34"
 const parseCurrency = (value) => {
   if (!value) return null;
   const cleaned = value.toString().trim().replace(/[$,\s"]/g, '').replace(/^\((.+)\)$/, '-$1');
@@ -31,112 +30,121 @@ const parseCurrency = (value) => {
   return isNaN(num) ? null : num;
 };
 
-// Extract last 4 digits from account ID
 const getLast4 = (accountId) => {
   if (!accountId) return null;
   return accountId.toString().trim().slice(-4);
 };
 
-const parse = (fileBuffer) => {
-  const positions = [];
-  const skipped   = [];
-  const errors    = [];
+// Parse CFCU date format "05/18/26" → "2026-05-18"
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+  const parts = dateStr.trim().split('/');
+  if (parts.length !== 3) return null;
+  const [month, day, year] = parts;
+  const fullYear = parseInt(year) < 100 ? 2000 + parseInt(year) : parseInt(year);
+  const d = new Date(fullYear, parseInt(month) - 1, parseInt(day));
+  return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+};
 
-  // Strip BOM if present
+// Core parse — returns grouped positions keyed by account last4
+const parseBuffer = (fileBuffer) => {
+  const errors = [];
+
   const buf = fileBuffer[0] === 0xEF && fileBuffer[1] === 0xBB && fileBuffer[2] === 0xBF
     ? fileBuffer.slice(3)
     : fileBuffer;
-  const csvString = buf.toString('utf8');
 
-  const result = Papa.parse(csvString, {
+  const result = Papa.parse(buf.toString('utf8'), {
     header: true,
     skipEmptyLines: true,
     transformHeader: (h) => h.trim(),
   });
 
-  if (result.errors.length > 0) {
-    result.errors.forEach(err => {
-      errors.push({ row: err.row, message: err.message, type: 'parse_error' });
-    });
-  }
+  result.errors.forEach(err =>
+    errors.push({ row: err.row, message: err.message, type: 'parse_error' })
+  );
 
   if (result.data.length === 0) {
     errors.push({ message: 'No transaction data found in file', type: 'empty_file' });
-    return { positions, skipped, errors };
+    return { accountMap: new Map(), errors };
   }
 
-  // Group rows by Account ID — keep only the first (most recent) row per account
-  // CSV is ordered newest first so first row = current balance
+  // Group by Account ID — keep only first (most recent) row per account
   const accountMap = new Map();
-
   for (const row of result.data) {
     const accountId = row['Account ID']?.toString().trim();
-    if (!accountId) {
-      skipped.push({ reason: 'no_account_id', row });
-      continue;
-    }
-
-    // Only keep the first (most recent) row per account
+    if (!accountId) continue;
     if (!accountMap.has(accountId)) {
       accountMap.set(accountId, row);
     }
   }
 
-  // Build a position for each account
-  for (const [accountId, row] of accountMap.entries()) {
-    const balance = parseCurrency(row['Balance']);
-    const date    = row['Date']?.trim();
+  return { accountMap, errors };
+};
 
-    if (balance === null) {
-      errors.push({
-        accountId,
-        message: `Could not parse balance for account ${accountId}`,
-        type: 'parse_error',
-      });
+// Build a single position from an account row
+const buildPosition = (accountId, row) => {
+  const balance = parseCurrency(row['Balance']);
+  if (balance === null) return null;
+
+  return {
+    ticker:      'CASH',
+    asset_name:  'Cash Balance',
+    asset_type:  'cash',
+    shares:      Math.abs(balance),
+    cost_basis:  0,
+    as_of_date:  parseDate(row['Date']) || new Date().toISOString().split('T')[0],
+    accountLast4: getLast4(accountId),
+  };
+};
+
+// ---------------------------------------------------------------------------
+// parseMulti — multi-account path (used by upload controller)
+// Returns { accounts: [{ acctId, positions[] }], errors[] }
+// ---------------------------------------------------------------------------
+const parseMulti = (fileBuffer) => {
+  const { accountMap, errors } = parseBuffer(fileBuffer);
+  const accounts = [];
+
+  for (const [accountId, row] of accountMap.entries()) {
+    const position = buildPosition(accountId, row);
+    if (!position) {
+      errors.push({ accountId, message: `Could not parse balance for account ${accountId}`, type: 'parse_error' });
       continue;
     }
-
-    // Parse date — CFCU format: "05/18/26"
-    let asOfDate = null;
-    if (date) {
-      const parts = date.split('/');
-      if (parts.length === 3) {
-        const [month, day, year] = parts;
-        const fullYear = parseInt(year) < 100 ? 2000 + parseInt(year) : parseInt(year);
-        const d = new Date(fullYear, parseInt(month) - 1, parseInt(day));
-        if (!isNaN(d.getTime())) {
-          asOfDate = d.toISOString().split('T')[0];
-        }
-      }
-    }
-
-    positions.push({
-      accountNumber:  accountId,
-      accountLast4:   getLast4(accountId),
-
-      // Cash position — balance is the dollar amount
-      ticker:         'CASH',
-      assetName:      'Cash Balance',
-      assetType:      'cash',
-
-      shares:         Math.abs(balance), // balance = dollar amount for cash
-      costBasis:      0,
-      costBasisPerShare: null,
-
-      exportPrice:    1.00,
-      asOfDate,
-      importSource:   'cfcu_csv',
-    });
+    accounts.push({ acctId: getLast4(accountId), positions: [position] });
   }
 
-  return { positions, skipped, errors };
+  return { accounts, errors };
+};
+
+// ---------------------------------------------------------------------------
+// matchAccounts — standard last4 matching (same pattern as LPL/OFX)
+// ---------------------------------------------------------------------------
+const matchAccounts = (parsedAccounts, dbAccounts) => {
+  const matched   = [];
+  const unmatched = [];
+
+  for (const parsed of parsedAccounts) {
+    const last4  = String(parsed.acctId).slice(-4);
+    const dbAcct = dbAccounts.find(a => String(a.account_number_last4).trim() === last4);
+    if (dbAcct) {
+      matched.push({ parsed, dbAcct });
+    } else {
+      unmatched.push(parsed.acctId);
+    }
+  }
+
+  return { matched, unmatched };
 };
 
 module.exports = {
-  id:          'cfcu_csv',
-  name:        'CFCU (Community First CU) CSV',
-  accepts:     ['csv'],
-  institution: 'cfcu',
-  description: 'Parses transaction history CSV from Community First Credit Union. Uses most recent balance per account.',
-  parse,
+  id:           'cfcu_csv',
+  name:         'CFCU (Community First CU) CSV',
+  description:  'Transaction history CSV from Community First Credit Union. Auto-matches accounts by last 4 digits.',
+  fileTypes:    ['csv'],
+  institutions: ['cfcu'],
+  multiAccount: true,
+  parseMulti,
+  matchAccounts,
 };

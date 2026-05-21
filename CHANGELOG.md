@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.2] — 2026-05-21
+
+### Fixed
+- CFCU CSV importer rewritten as multi-account (`multiAccount: true`) — no longer requires account selection; auto-matches checking/savings accounts by last 4 digits, eliminating "accountId is required for CSV imports" error
+
+---
+
 ## [1.1.1] — 2026-05-21
 
 ### Fixed

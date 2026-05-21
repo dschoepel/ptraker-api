@@ -1,3 +1,24 @@
+# Release Notes — v1.1.2
+
+**Date:** 2026-05-21
+**Type:** Patch — CFCU CSV multi-account rewrite
+
+## Summary
+
+Rewrites the CFCU CSV importer as a multi-account importer (`multiAccount: true`).
+It now auto-matches checking and savings accounts by last 4 digits — no account
+selection step required. Fixes "accountId is required for CSV imports" error when
+uploading a CFCU transaction history CSV.
+
+## Deployment
+
+```bash
+git tag v1.1.2
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.1.1
 
 **Date:** 2026-05-21
