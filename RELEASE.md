@@ -1,3 +1,24 @@
+# Release Notes — v1.1.1
+
+**Date:** 2026-05-21
+**Type:** Patch — CFCU CSV import crash fix
+
+## Summary
+
+Fixes a crash when uploading a CFCU transaction history CSV. The importer's `parse()`
+returns `{positions, skipped, errors}` but the controller expected a plain array.
+Also filters positions to the selected account by last4 digits so uploading a
+multi-account CFCU file doesn't dump all balances into one account.
+
+## Deployment
+
+```bash
+git tag v1.1.1
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.1.0
 
 **Date:** 2026-05-21

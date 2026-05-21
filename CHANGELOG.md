@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.1] — 2026-05-21
+
+### Fixed
+- CFCU CSV import crash — `parse()` returns `{positions,skipped,errors}` not a plain array; controller now extracts the array before passing to `upsertPositions`
+- CFCU CSV now filters imported positions to the selected account by last4 digits, preventing all CFCU account balances from landing in one account
+
+---
+
 ## [1.1.0] — 2026-05-21
 
 ### Added
