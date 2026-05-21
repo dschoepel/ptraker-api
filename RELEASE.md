@@ -1,3 +1,23 @@
+# Release Notes — v1.1.4
+
+**Date:** 2026-05-21
+**Type:** Patch — version endpoint for client footer
+
+## Summary
+
+Adds `GET /api/v1/version` (public, no auth) returning `{ version }` so the
+client footer can display the live API version alongside the client version.
+Also includes `version` in the existing `/health` response.
+
+## Deployment
+
+```bash
+git tag v1.1.4
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.1.3
 
 **Date:** 2026-05-21

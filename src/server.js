@@ -47,9 +47,15 @@ if (process.env.NODE_ENV === 'development') {
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
+    version: require('../package.json').version,
     timestamp: new Date().toISOString(),
     env: process.env.NODE_ENV,
   });
+});
+
+// Public version endpoint — used by client footer
+app.get('/api/v1/version', (req, res) => {
+  res.json({ version: require('../package.json').version });
 });
 
 // =============================================================================

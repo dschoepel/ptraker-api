@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.4] — 2026-05-21
+
+### Added
+- `GET /api/v1/version` — public endpoint returning `{ version }` used by client footer
+- `GET /health` now also includes `version` field
+
+---
+
 ## [1.1.3] — 2026-05-21
 
 ### Fixed
