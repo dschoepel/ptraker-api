@@ -1,17 +1,11 @@
 # ptraker-api
 
-Express/Node.js backend for **portfolioTraker** — a personal investment portfolio tracker.
-
-## Overview
-
-Tracks $2M+ across 8 accounts (LPL brokerage/retirement, CFCU bank, NJSD 403b/457).
-Multi-user with role-based access (admin/user/viewer), portfolio sharing, and admin notifications.
+Express/Node.js backend for **portfolioTraker** — personal investment portfolio tracker.
 
 ## Tech Stack
-
 | Layer | Technology |
 |---|---|
-| Runtime | Node.js 23 (dev) / 22 LTS (prod) |
+| Runtime | Node.js 23 |
 | Framework | Express 4 |
 | Database | PostgreSQL via self-hosted Supabase |
 | Auth | Supabase Auth (JWT) |
@@ -20,88 +14,35 @@ Multi-user with role-based access (admin/user/viewer), portfolio sharing, and ad
 | Email | nodemailer |
 | Logging | Winston |
 
-## Prerequisites
-
-- Node.js 20+
-- Self-hosted Supabase instance (see [supabase/supabase](https://github.com/supabase/supabase))
-
-## Installation
-
+## Quick Start
 ```bash
 git clone https://github.com/dschoepel/ptraker-api
 cd ptraker-api
 npm install
-```
-
-## Configuration
-
-```env
-# Supabase
-SUPABASE_URL=http://your-supabase-host:8100
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# Auth
-JWT_SECRET=your-jwt-secret
-CLIENT_URL=http://localhost:5173
-API_EXTERNAL_URL=http://your-supabase-host:8100
-
-# SMTP (nodemailer)
-SMTP_HOST=your-smtp-host
-SMTP_PORT=587
-SMTP_USER=your-smtp-user
-SMTP_PASS=your-smtp-password
-SMTP_SENDER_NAME=portfolioTraker
-SMTP_FROM_EMAIL=noreply@yourdomain.com
-```
-
-## Running
-
-```bash
-npm run dev     # nodemon, port 5000
-npm start       # production
+cp .env.example .env   # fill in values
+npm run dev            # port 5000
 ```
 
 ## Features
-
-- JWT authentication via Supabase Auth
-- Role-based access control (admin/user/viewer)
+- JWT auth via Supabase, role-based access (admin/user/viewer)
 - Portfolio sharing between users
-- CSV import pipeline (LPL Financial, Community First CU)
-- Manual position entry with Yahoo Finance price lookup
-- Scheduled daily price refresh via node-cron
-- User invite flow via generateLink + nodemailer
-- Password reset with OTP code via generateLink + nodemailer
-- Admin notifications via Ntfy and email
+- Generic OFX/QFX importer — investment positions + bank balances, any institution
+- LPL Financial CSV multi-account importer
+- CFCU transaction CSV importer
+- Manual position entry (cash balance or fund/stock by market value)
+- Scheduled daily price refresh (Yahoo Finance, weekdays 4pm CT)
+- User invite and password reset via generateLink + nodemailer
+- Admin notifications via Ntfy push and email
 - Data export endpoint
 
-## Import Plugins
-
-| Plugin | Institution | Format | Status |
+## Import Formats
+| Importer | Institution | Format | Notes |
 |---|---|---|---|
-| `lpl_csv` | LPL Financial | CSV | ✅ |
-| `cfcu_csv` | Community First CU | CSV | ✅ |
-| `manual` | Any | Manual | ✅ |
-| `lpl_qfx` | LPL Financial | QFX | 🔜 |
-| `merrill_csv` | Merrill Lynch | CSV | 🔜 |
-| `schwab_csv` | Schwab | CSV | 🔜 |
-
-## Key Notes
-
-### GoTrue v2.186 Email Bug
-GoTrue silently skips all outgoing emails. Both invite and password reset emails
-are sent via nodemailer using `generateLink` to get the action URL and OTP code.
-
-### Route Registration Order
-Specific routes must come before parameterized routes:
-- `/shares/discoverable-users` before `/shares/:ownerId/dashboard`
-- `/watchlist/search` before `/watchlist/:ticker`
-
-## Production
-
-Deployed via Docker on Jupiter VPS using Portainer.
-See `Dockerfile` (planned) for container configuration.
+| `lpl_csv` | LPL Financial | CSV | All accounts in one file |
+| `ofx_qfx` | Any | OFX/QFX | Investment positions + bank balances |
+| `cfcu_csv` | Community First CU | CSV | Legacy — use OFX instead |
+| `manual` | Any | UI form | Cash balance or market value entry |
 
 ## Related
-
 - [ptraker-client](https://github.com/dschoepel/ptraker-client) — React frontend
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — full system design and developer guide
