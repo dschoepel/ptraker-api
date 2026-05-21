@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.3] — 2026-05-21
+
+### Fixed
+- Manual entry "Account not found" — account lookup now uses admin client; anon client has no user JWT so RLS blocked the query
+- Same fix applied to single-account CSV upload path
+
+---
+
 ## [1.1.2] — 2026-05-21
 
 ### Fixed

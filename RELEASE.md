@@ -1,3 +1,24 @@
+# Release Notes — v1.1.3
+
+**Date:** 2026-05-21
+**Type:** Patch — manual entry "Account not found" fix
+
+## Summary
+
+Fixes "Account not found" error on manual entry (and single-account CSV upload).
+The account lookup was using `getAnonClient()` which has no user JWT attached,
+so Supabase RLS blocked the query and returned null. Both lookups now use the
+admin client with an explicit `user_id` filter for authorization.
+
+## Deployment
+
+```bash
+git tag v1.1.3
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.1.2
 
 **Date:** 2026-05-21

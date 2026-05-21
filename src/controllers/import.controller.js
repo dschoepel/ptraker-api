@@ -143,8 +143,8 @@ const uploadFile = [
         return res.status(400).json({ message: 'accountId is required for CSV imports' });
       }
 
-      // Verify account belongs to user
-      const { data: acct, error: acctErr } = await supabase
+      // Verify account belongs to user — use admin client (anon client has no user JWT)
+      const { data: acct, error: acctErr } = await admin
         .from('accounts')
         .select('id, name, account_number_last4')
         .eq('id', accountId)
@@ -215,8 +215,8 @@ const importManual = async (req, res) => {
   const admin = getAdminClient();
 
   try {
-    // Verify account
-    const { data: acct, error: acctErr } = await supabase
+    // Verify account — use admin client (anon client has no user JWT, RLS blocks the query)
+    const { data: acct, error: acctErr } = await admin
       .from('accounts')
       .select('id, name, type')
       .eq('id', accountId)
