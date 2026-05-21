@@ -1,3 +1,26 @@
+# Release Notes — v1.1.0
+
+**Date:** 2026-05-21
+**Type:** Minor — manual entry importer exposed to UI
+
+## Summary
+
+Manual entry importer is now included in `GET /import/importers` response (previously filtered out).
+The UI can now display it alongside file-based importers and use the `isManual` flag to render
+the manual entry form instead of the file upload step.
+
+Also renames `cfcu.csv.js` → `cfcu_csv.js` to match underscore naming convention used by all
+other importers, fixing a potential Linux case-sensitive filesystem issue.
+
+## Deployment
+
+```bash
+git tag v1.1.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.0.0
 
 **Date:** 2026-05-21

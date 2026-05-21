@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.0] — 2026-05-21
+
+### Added
+- `GET /import/importers` now includes the manual entry importer (with `isManual: true` flag) so the UI can display it alongside file importers
+
+### Fixed
+- Renamed `cfcu.csv.js` → `cfcu_csv.js` to match underscore naming convention and fix Linux case-sensitive build
+
+---
+
 ## [1.0.0] — 2026-05-21
 
 ### Added
