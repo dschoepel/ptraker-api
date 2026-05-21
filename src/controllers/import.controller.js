@@ -146,7 +146,7 @@ const uploadFile = [
       // Verify account belongs to user
       const { data: acct, error: acctErr } = await supabase
         .from('accounts')
-        .select('id, name')
+        .select('id, name, account_number_last4')
         .eq('id', accountId)
         .eq('user_id', userId)
         .single();
@@ -155,7 +155,22 @@ const uploadFile = [
         return res.status(404).json({ message: 'Account not found' });
       }
 
-      const rows = await importer.parse(req.file.buffer);
+      const parseResult = importer.parse(req.file.buffer);
+
+      // Importers may return a plain array or { positions, skipped, errors }
+      let rows = Array.isArray(parseResult) ? parseResult : (parseResult.positions || []);
+
+      // If positions carry accountLast4, filter to the selected account only
+      if (rows.length > 0 && rows[0].accountLast4 && acct.account_number_last4) {
+        const last4 = String(acct.account_number_last4).trim();
+        rows = rows.filter(r => String(r.accountLast4).trim() === last4);
+        if (rows.length === 0) {
+          return res.status(400).json({
+            message: `No data in this file matched account ending in ${last4}. ` +
+              'Check that you selected the correct account.',
+          });
+        }
+      }
 
       const result = await upsertPositions({
         supabase,
