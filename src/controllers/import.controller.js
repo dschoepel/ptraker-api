@@ -13,7 +13,7 @@ const logger = require('../utils/logger');
 
 // Importers
 const lplCsvImporter = require('../importers/lpl_csv');
-const cfcuCsvImporter = require('../importers/cfcu.csv');
+const cfcuCsvImporter = require('../importers/cfcu_csv');
 const ofxQfxImporter = require('../importers/ofx_qfx');
 const manualImporter = require('../importers/manual');
 
@@ -36,14 +36,14 @@ const upload = multer({
 // ---------------------------------------------------------------------------
 const getImporters = (req, res) => {
   const list = Object.values(IMPORTERS)
-    .filter(i => i.id !== 'manual')
     .map(i => ({
       id: i.id,
       name: i.name,
       description: i.description,
-      fileTypes: i.fileTypes,
-      institutions: i.institutions,
+      fileTypes: i.fileTypes || [],
+      institutions: i.institutions || [],
       multiAccount: i.multiAccount === true,
+      isManual: i.isManual === true,
     }));
   res.json({ importers: list });
 };
