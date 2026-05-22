@@ -205,7 +205,7 @@ const uploadFile = [
 // ---------------------------------------------------------------------------
 const importManual = async (req, res) => {
   const userId = req.user.id;
-  const { accountId, mode, ticker, shares, marketValue, costBasis, asOfDate } = req.body;
+  const { accountId, mode, ticker, shares, marketValue, costBasis, asOfDate, price, assetName } = req.body;
 
   if (!accountId || !mode) {
     return res.status(400).json({ message: 'accountId and mode are required' });
@@ -242,39 +242,53 @@ const importManual = async (req, res) => {
         as_of_date: asOfDate || new Date().toISOString().split('T')[0],
       };
     } else {
-      // Fund/stock entry by market value — back-calculate shares
+      // Fund/stock entry
       if (!ticker) return res.status(400).json({ message: 'ticker is required' });
 
-      const mv = parseFloat(marketValue || 0);
-      if (isNaN(mv) || mv <= 0) {
-        return res.status(400).json({ message: 'marketValue must be positive' });
-      }
-
-      // Get current price from cache or Yahoo Finance
       let currentPrice = null;
-      const { data: cached } = await admin
-        .from('price_cache')
-        .select('price')
-        .eq('ticker', ticker.toUpperCase())
-        .single();
+      const manualPrice = parseFloat(price);
+      const isPrivate = manualPrice > 0;
 
-      if (cached?.price) {
-        currentPrice = cached.price;
+      if (isPrivate) {
+        // Private/unlisted stock — use provided price directly, skip Yahoo Finance
+        currentPrice = manualPrice;
+        await admin.from('price_cache').upsert(
+          { ticker: ticker.toUpperCase(), price: currentPrice, last_fetched_at: new Date().toISOString(), fetch_source: 'manual' },
+          { onConflict: 'ticker' }
+        );
       } else {
-        // Attempt Yahoo Finance lookup
-        try {
-          const YahooFinance = require('yahoo-finance2').default;
-          const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
-          const quote = await yf.quote(ticker.toUpperCase());
-          currentPrice = quote?.regularMarketPrice || null;
-        } catch {
-          // Price not available — user must provide shares directly
+        // Exchange-listed stock — check cache then Yahoo Finance
+        const mv = parseFloat(marketValue || 0);
+        if (isNaN(mv) || mv <= 0) {
+          return res.status(400).json({ message: 'marketValue must be positive' });
+        }
+
+        const { data: cached } = await admin
+          .from('price_cache')
+          .select('price')
+          .eq('ticker', ticker.toUpperCase())
+          .single();
+
+        if (cached?.price) {
+          currentPrice = cached.price;
+        } else {
+          try {
+            const YahooFinance = require('yahoo-finance2').default;
+            const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+            const quote = await yf.quote(ticker.toUpperCase());
+            currentPrice = quote?.regularMarketPrice || null;
+          } catch {
+            // Price not available
+          }
         }
       }
 
-      const calculatedShares = currentPrice
-        ? mv / currentPrice
-        : parseFloat(shares || 0);
+      const mv = parseFloat(marketValue || 0);
+      const calculatedShares = isPrivate
+        ? parseFloat(shares || 0)
+        : currentPrice
+          ? mv / currentPrice
+          : parseFloat(shares || 0);
 
       if (calculatedShares <= 0) {
         return res.status(400).json({
@@ -286,12 +300,12 @@ const importManual = async (req, res) => {
       }
 
       position = {
-        ticker: ticker.toUpperCase(),
-        asset_name: ticker.toUpperCase(),
-        asset_type: 'stock',  // will be refined by price refresh
-        shares: calculatedShares,
-        cost_basis: parseFloat(costBasis || 0),
-        as_of_date: asOfDate || new Date().toISOString().split('T')[0],
+        ticker:      ticker.toUpperCase(),
+        asset_name:  assetName || ticker.toUpperCase(),
+        asset_type:  'stock',
+        shares:      calculatedShares,
+        cost_basis:  parseFloat(costBasis || 0),
+        as_of_date:  asOfDate || new Date().toISOString().split('T')[0],
         current_price: currentPrice,
       };
     }
@@ -308,8 +322,8 @@ const importManual = async (req, res) => {
       source: 'manual',
     });
 
-    // Refresh price cache for non-cash
-    if (position.asset_type !== 'cash') {
+    // Refresh price cache for exchange-listed stocks (private stocks already have price in cache)
+    if (position.asset_type !== 'cash' && !parseFloat(price)) {
       await fetchPricesForTickers([position.ticker]).catch(() => {});
     }
 
