@@ -145,11 +145,12 @@ const exportData = async (req, res, next) => {
   try {
     const supabase = getAdminClient();
 
-    const [accounts, positions, importHistory, watchlist] = await Promise.all([
+    const [accounts, positions, importHistory, watchlist, importerPrefs] = await Promise.all([
       supabase.from('accounts').select('*').eq('user_id', req.user.id),
       supabase.from('positions').select('*').eq('user_id', req.user.id),
       supabase.from('import_history').select('*').eq('user_id', req.user.id),
       supabase.from('watchlist').select('*').eq('user_id', req.user.id),
+      supabase.from('user_importer_preferences').select('importer_id, is_enabled').eq('user_id', req.user.id),
     ]);
 
     const { data: profile } = await supabase
@@ -161,18 +162,19 @@ const exportData = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       export: {
-        exportedAt:    new Date().toISOString(),
+        exportedAt:         new Date().toISOString(),
         user: {
-          id:          req.user.id,
-          email:       req.user.email,
-          displayName: profile?.display_name,
-          role:        profile?.role,
-          createdAt:   profile?.created_at,
+          id:               req.user.id,
+          email:            req.user.email,
+          displayName:      profile?.display_name,
+          role:             profile?.role,
+          createdAt:        profile?.created_at,
         },
-        accounts:      accounts.data  || [],
-        positions:     positions.data || [],
-        importHistory: importHistory.data || [],
-        watchlist:     watchlist.data || [],
+        accounts:           accounts.data       || [],
+        positions:          positions.data      || [],
+        importHistory:      importHistory.data  || [],
+        watchlist:          watchlist.data      || [],
+        importerPreferences: importerPrefs.data || [],
       },
     });
   } catch (err) {
@@ -180,4 +182,84 @@ const exportData = async (req, res, next) => {
   }
 };
 
-module.exports = { requestUpgrade, getUpgradeRequest, deleteOwnAccount, exportData };
+// -----------------------------------------------------------------------------
+// GET /api/v1/user/importer-preferences
+// Returns all active non-default importers with the user's enabled state
+// -----------------------------------------------------------------------------
+const getImporterPreferences = async (req, res, next) => {
+  try {
+    const supabase = getAdminClient();
+
+    const { data: importers, error } = await supabase
+      .from('importers')
+      .select('id, name, description, instructions, file_types, institutions, is_default, display_order')
+      .eq('is_active', true)
+      .eq('is_default', false)
+      .order('display_order', { ascending: true });
+
+    if (error) return next(error);
+
+    const { data: prefs } = await supabase
+      .from('user_importer_preferences')
+      .select('importer_id, is_enabled')
+      .eq('user_id', req.user.id);
+
+    const prefMap = {};
+    (prefs || []).forEach(p => { prefMap[p.importer_id] = p.is_enabled; });
+
+    const result = (importers || []).map(imp => ({
+      id:           imp.id,
+      name:         imp.name,
+      description:  imp.description,
+      instructions: imp.instructions,
+      fileTypes:    imp.file_types || [],
+      institutions: imp.institutions || [],
+      isEnabled:    prefMap[imp.id] ?? false,
+    }));
+
+    return res.status(200).json({ success: true, preferences: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// -----------------------------------------------------------------------------
+// PATCH /api/v1/user/importer-preferences
+// Body: { preferences: [{ importer_id, is_enabled }] }
+// -----------------------------------------------------------------------------
+const updateImporterPreferences = async (req, res, next) => {
+  try {
+    const { preferences } = req.body;
+
+    if (!Array.isArray(preferences)) {
+      return res.status(400).json({ success: false, message: 'preferences must be an array' });
+    }
+
+    const supabase = getAdminClient();
+
+    const rows = preferences.map(p => ({
+      user_id:    req.user.id,
+      importer_id: p.importer_id,
+      is_enabled: p.is_enabled,
+    }));
+
+    const { error } = await supabase
+      .from('user_importer_preferences')
+      .upsert(rows, { onConflict: 'user_id,importer_id' });
+
+    if (error) return next(error);
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = {
+  requestUpgrade,
+  getUpgradeRequest,
+  deleteOwnAccount,
+  exportData,
+  getImporterPreferences,
+  updateImporterPreferences,
+};

@@ -19,4 +19,10 @@ router.delete('/account', userController.deleteOwnAccount);
 // GET /api/v1/user/export
 router.get('/export', userController.exportData);
 
+// GET /api/v1/user/importer-preferences
+router.get('/importer-preferences', userController.getImporterPreferences);
+
+// PATCH /api/v1/user/importer-preferences
+router.patch('/importer-preferences', userController.updateImporterPreferences);
+
 module.exports = router;

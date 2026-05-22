@@ -478,6 +478,126 @@ const deleteUser = async (req, res, next) => {
 };
 
 
+// -----------------------------------------------------------------------------
+// GET /api/v1/admin/importers
+// Returns all importers (active and inactive) for admin management
+// -----------------------------------------------------------------------------
+const getAdminImporters = async (req, res, next) => {
+  try {
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from('importers')
+      .select('*')
+      .order('display_order', { ascending: true });
+
+    if (error) return next(error);
+
+    // Tag each with whether a code module exists
+    const IMPORTERS = require('../importers');
+    const importers = (data || []).map(imp => ({
+      ...imp,
+      hasModule: !!IMPORTERS[imp.id],
+    }));
+
+    return res.status(200).json({ success: true, importers });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// -----------------------------------------------------------------------------
+// POST /api/v1/admin/importers
+// Register a new importer (code module must already be deployed)
+// Body: { id, name, description, instructions, file_types, institutions,
+//         is_default, is_active, is_manual, multi_account, display_order }
+// -----------------------------------------------------------------------------
+const registerImporter = async (req, res, next) => {
+  try {
+    const { id, name, description, instructions, file_types, institutions,
+            is_default, is_active, is_manual, multi_account, display_order } = req.body;
+
+    if (!id || !name) {
+      return res.status(400).json({ success: false, message: 'id and name are required' });
+    }
+
+    const IMPORTERS = require('../importers');
+    if (!IMPORTERS[id]) {
+      return res.status(400).json({
+        success: false,
+        message: `No code module found for importer id '${id}'. Deploy the module first.`,
+      });
+    }
+
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from('importers')
+      .insert({
+        id,
+        name,
+        description:  description  || '',
+        instructions: instructions || '',
+        file_types:   file_types   || [],
+        institutions: institutions || [],
+        is_default:   is_default   ?? false,
+        is_active:    is_active    ?? true,
+        is_manual:    is_manual    ?? false,
+        multi_account: multi_account ?? false,
+        display_order: display_order ?? 100,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(409).json({ success: false, message: `Importer '${id}' is already registered` });
+      }
+      return next(error);
+    }
+
+    logger.info('Importer registered', { id, registeredBy: req.user.id });
+    return res.status(201).json({ success: true, importer: data });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// -----------------------------------------------------------------------------
+// PATCH /api/v1/admin/importers/:id
+// Update importer metadata — name, description, instructions, is_default,
+// is_active, display_order
+// -----------------------------------------------------------------------------
+const updateImporter = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['name', 'description', 'instructions', 'is_default', 'is_active', 'display_order'];
+    const updates = {};
+    for (const field of allowed) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ success: false, message: 'No updatable fields provided' });
+    }
+
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from('importers')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) return next(error);
+    if (!data) return res.status(404).json({ success: false, message: 'Importer not found' });
+
+    logger.info('Importer updated', { id, updates, updatedBy: req.user.id });
+    return res.status(200).json({ success: true, importer: data });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
 module.exports = {
   requireAdmin,
   getUsers,
@@ -489,5 +609,8 @@ module.exports = {
   getNotificationSettings,
   updateNotificationSettings,
   testNotificationSettings,
+  getAdminImporters,
+  registerImporter,
+  updateImporter,
 };
 

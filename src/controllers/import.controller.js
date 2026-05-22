@@ -32,20 +32,60 @@ const upload = multer({
 
 // ---------------------------------------------------------------------------
 // GET /import/importers
-// Returns list of available importers for the UI dropdown
+// Returns list of importers the user has enabled (defaults always included)
 // ---------------------------------------------------------------------------
-const getImporters = (req, res) => {
-  const list = Object.values(IMPORTERS)
-    .map(i => ({
-      id: i.id,
-      name: i.name,
-      description: i.description,
-      fileTypes: i.fileTypes || [],
-      institutions: i.institutions || [],
-      multiAccount: i.multiAccount === true,
-      isManual: i.isManual === true,
+const getImporters = async (req, res) => {
+  const userId = req.user.id;
+  const admin = getAdminClient();
+
+  try {
+    const { data: dbImporters, error } = await admin
+      .from('importers')
+      .select('*')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true });
+
+    if (error) throw error;
+
+    const { data: prefs } = await admin
+      .from('user_importer_preferences')
+      .select('importer_id, is_enabled')
+      .eq('user_id', userId);
+
+    const prefMap = {};
+    (prefs || []).forEach(p => { prefMap[p.importer_id] = p.is_enabled; });
+
+    const list = (dbImporters || [])
+      .filter(imp => {
+        if (!IMPORTERS[imp.id]) {
+          logger.warn(`Importer '${imp.id}' has no code module — skipping`);
+          return false;
+        }
+        return imp.is_default || prefMap[imp.id] === true;
+      })
+      .map(imp => ({
+        id:           imp.id,
+        name:         imp.name,
+        description:  imp.description,
+        instructions: imp.instructions,
+        fileTypes:    imp.file_types || [],
+        institutions: imp.institutions || [],
+        multiAccount: imp.multi_account,
+        isManual:     imp.is_manual,
+        isDefault:    imp.is_default,
+      }));
+
+    return res.json({ importers: list });
+  } catch (err) {
+    logger.warn('getImporters DB query failed, falling back to code registry:', err.message);
+    const list = Object.values(IMPORTERS).map(i => ({
+      id: i.id, name: i.name, description: i.description, instructions: '',
+      fileTypes: i.fileTypes || [], institutions: i.institutions || [],
+      multiAccount: i.multiAccount === true, isManual: i.isManual === true,
+      isDefault: i.id === 'ofx_qfx' || i.id === 'manual',
     }));
-  res.json({ importers: list });
+    return res.json({ importers: list });
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -65,6 +105,15 @@ const uploadFile = [
 
     const importer = IMPORTERS[importerId];
     if (!importer) return res.status(400).json({ message: `Unknown importer: ${importerId}` });
+
+    // File type validation
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const accepted = importer.fileTypes || [];
+    if (accepted.length > 0 && !accepted.includes(ext)) {
+      return res.status(400).json({
+        message: `This importer only accepts ${accepted.join(' or ')} files. You uploaded "${ext || '(no extension)'}"`,
+      });
+    }
 
     const supabase = getAnonClient();
     const admin = getAdminClient();
@@ -478,10 +527,7 @@ async function upsertPositions({
 
   // Log import history
   try {
-    const fileFormat = source.includes('qfx') ? 'qfx'
-      : source.includes('ofx') ? 'ofx'
-      : source === 'manual'    ? 'manual'
-      : 'csv';
+    const fileFormat = source;
 
     const INSTITUTION_NAMES = {
       lpl_csv: 'lpl', ofx_qfx: 'lpl', cfcu_csv: 'cfcu', manual: 'manual',

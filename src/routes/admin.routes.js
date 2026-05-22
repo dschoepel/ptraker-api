@@ -37,4 +37,13 @@ router.post('/notification-settings/test', adminController.testNotificationSetti
 // DELETE /api/v1/admin/users/:id
 router.delete('/users/:id', adminController.deleteUser);
 
+// GET  /api/v1/admin/importers
+router.get('/importers', adminController.getAdminImporters);
+
+// POST /api/v1/admin/importers
+router.post('/importers', adminController.registerImporter);
+
+// PATCH /api/v1/admin/importers/:id
+router.patch('/importers/:id', adminController.updateImporter);
+
 module.exports = router;
