@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.2.0] — 2026-05-21
+
+### Added
+- Private / unlisted stock support in `POST /import/manual` — when `price` is provided in the request body, Yahoo Finance lookup is skipped; shares are used directly and price is upserted into `price_cache`
+- `deploy/seeds/demo-user.sql` — seed script creating a demo user with ~$1M sample portfolio across Schwab (3 retirement), Merrill Lynch (brokerage), US Bank (3 bank), and Other accounts
+- `deploy/seeds/demo-user-rollback.sql` — cleanup script to remove demo user and all associated data
+
+### Fixed
+- `price_cache` upsert used wrong column name (`updated_at` instead of `last_fetched_at`) causing the upsert to silently fail and private stock prices not appearing on the dashboard
+
+---
+
 ## [1.1.4] — 2026-05-21
 
 ### Added

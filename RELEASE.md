@@ -1,3 +1,30 @@
+# Release Notes — v1.2.0
+
+**Date:** 2026-05-21
+**Type:** Minor — private/unlisted stock support + demo seed
+
+## Summary
+
+Adds support for private/unlisted stocks in manual entry. When a `price` field
+is included in the `POST /import/manual` request body, Yahoo Finance lookup is
+skipped entirely — shares and price are used directly, and the price is upserted
+into `price_cache` so the dashboard shows the correct value immediately.
+
+Fixes a silent bug where the `price_cache` upsert used the wrong column name
+(`updated_at` vs `last_fetched_at`), causing private stock prices to never appear.
+
+Also adds a demo user seed script (`deploy/seeds/demo-user.sql`) with a ~$1M
+sample portfolio for screenshots and demos, and a matching rollback script.
+
+## Deployment
+
+```bash
+git tag v1.2.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.1.4
 
 **Date:** 2026-05-21
