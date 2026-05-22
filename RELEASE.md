@@ -1,3 +1,27 @@
+# Release Notes — v1.3.1
+
+**Date:** 2026-05-22
+**Type:** Patch — CFCU CSV file type validation fix
+
+## Summary
+
+Fixes a false rejection when uploading a CFCU CSV file. The `cfcu_csv` importer
+declared its accepted file type without the leading dot (`'csv'` instead of
+`'.csv'`), so `path.extname()` (which returns `'.csv'`) never matched, and every
+valid upload was rejected with "This importer only accepts csv files. You uploaded
+'.csv'". All other importers (`lpl_csv`, `ofx_qfx`) already used the dot-prefixed
+form. The controller's validation also now normalizes accepted extensions to
+dot-prefixed form as a belt-and-suspenders safeguard.
+
+## Deployment
+
+```bash
+git tag v1.3.1
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.3.0
 
 **Date:** 2026-05-22

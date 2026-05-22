@@ -142,7 +142,7 @@ module.exports = {
   id:           'cfcu_csv',
   name:         'CFCU (Community First CU) CSV',
   description:  'Transaction history CSV from Community First Credit Union. Auto-matches accounts by last 4 digits.',
-  fileTypes:    ['csv'],
+  fileTypes:    ['.csv'],
   institutions: ['cfcu'],
   multiAccount: true,
   parseMulti,

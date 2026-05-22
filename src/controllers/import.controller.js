@@ -106,9 +106,9 @@ const uploadFile = [
     const importer = IMPORTERS[importerId];
     if (!importer) return res.status(400).json({ message: `Unknown importer: ${importerId}` });
 
-    // File type validation
+    // File type validation — normalize to dot-prefixed (e.g. '.csv')
     const ext = path.extname(req.file.originalname).toLowerCase();
-    const accepted = importer.fileTypes || [];
+    const accepted = (importer.fileTypes || []).map(t => t.startsWith('.') ? t : `.${t}`);
     if (accepted.length > 0 && !accepted.includes(ext)) {
       return res.status(400).json({
         message: `This importer only accepts ${accepted.join(' or ')} files. You uploaded "${ext || '(no extension)'}"`,

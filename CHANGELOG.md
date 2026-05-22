@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.1] — 2026-05-22
+
+### Fixed
+- CFCU CSV importer: `fileTypes` entry was missing the dot prefix (`'csv'` → `'.csv'`), causing valid `.csv` uploads to be rejected with a false type mismatch error
+- File type validation in `uploadFile` controller now normalizes accepted extensions to dot-prefixed form as a belt-and-suspenders safeguard
+
+---
+
 ## [1.3.0] — 2026-05-22
 
 ### Added
