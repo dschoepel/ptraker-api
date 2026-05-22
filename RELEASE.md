@@ -1,3 +1,46 @@
+# Release Notes — v1.3.0
+
+**Date:** 2026-05-22
+**Type:** Minor — pluggable importer registry
+
+## Summary
+
+Moves importer metadata from hard-coded JavaScript into the database, making the
+import pipeline extensible without code changes for configuration.
+
+Admin users can now manage importer names, descriptions, and usage instructions
+via a new Importers section on the Admin page. New importers are registered there
+after their code module is deployed — no more digging into source files to update
+display text.
+
+Users can select which importers appear on their Import page via a new Import
+Sources section in Profile settings. Default importers (OFX/QFX and Manual Entry)
+are always present. Optional importers (LPL Financial CSV, CFCU CSV, and any future
+additions) are toggled per-user.
+
+File type validation is now enforced server-side — uploading a `.csv` to the OFX
+importer returns a clear 400 error rather than a confusing parse failure.
+
+Import history now records the importer id (`lpl_csv`, `ofx_qfx`, etc.) in the
+`file_format` column instead of a generic category, making history more precise.
+
+## Deployment
+
+**DB migration required before deploying the API.** Run `docs/schema_importers.sql`
+in Supabase Studio (production) before pushing the tag:
+
+```
+ssh -p 22791 -L 3002:localhost:3002 dschoepel@142.202.190.9
+```
+Then open http://localhost:3002 → SQL Editor → run `docs/schema_importers.sql`.
+
+```bash
+git tag v1.3.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.2.0
 
 **Date:** 2026-05-21

@@ -58,6 +58,8 @@ if (error) logger.warn(error.message);
 - `price_cache` — shared, CASH always $1.00
 - `import_history` — see constraints below
 - `watchlist` — ticker, asset_name, asset_type, notes, added_from, added_at
+- `importers` — id (PK, matches JS module key), name, description, instructions, file_types[], institutions[], is_default, is_active, is_manual, multi_account, display_order
+- `user_importer_preferences` — (user_id, importer_id) PK, is_enabled; RLS per-user; default importers always shown regardless of preferences
 - `user_invites` — invited_by, email, role, status
 - `portfolio_shares` — owner_user_id, viewer_user_id, label
 - `role_requests` — user_id, requested_role, message, status, reviewed_by
@@ -129,13 +131,13 @@ const dbAcct = dbAccounts.find(a => String(a.account_number_last4).trim() === la
 - auth: login, logout, refresh, profile GET/PATCH, forgot-password, reset-password
 - accounts: GET, POST, PATCH/:id, DELETE/:id
 - positions: GET list, DELETE/:id
-- import: GET /importers, POST /upload (multipart), POST /manual, GET /history
+- import: GET /importers (DB-filtered by user prefs), POST /upload (multipart + file type validation), POST /manual, GET /history
 - prices: POST /refresh
 - dashboard: GET
 - watchlist: GET, GET /search, GET /:ticker/history, POST, PATCH/:ticker, DELETE/:ticker
-- admin: GET/POST/DELETE /users, POST /invite, GET/PATCH /role-requests/:id, GET/PATCH/POST /notification-settings(/test)
+- admin: GET/POST/DELETE /users, POST /invite, GET/PATCH /role-requests/:id, GET/PATCH/POST /notification-settings(/test), GET/POST/PATCH /importers
 - shares: GET /, GET /discoverable-users, POST /, DELETE /:id, GET /:ownerId/dashboard
-- user: POST /request-upgrade, GET /upgrade-request, GET /export, DELETE /account
+- user: POST /request-upgrade, GET /upgrade-request, GET /export, DELETE /account, GET/PATCH /importer-preferences
 
 ### Route Registration Order — matters!
 ```javascript

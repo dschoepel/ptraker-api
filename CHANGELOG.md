@@ -5,6 +5,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.0] — 2026-05-22
+
+### Added
+- Pluggable importer registry: `importers` DB table stores name, description, instructions, file_types, is_default, is_active, display_order for each importer
+- `user_importer_preferences` table: per-user enable/disable for non-default importers with RLS
+- `GET /import/importers` queries DB and filters by user preferences; default importers (OFX/QFX, Manual Entry) always included; falls back to code registry if DB unavailable
+- `GET/POST/PATCH /admin/importers` — admin endpoints to list, register, and update importers
+- `GET/PATCH /user/importer-preferences` — user endpoints to get and update importer preferences
+- `GET /user/export` now includes `importerPreferences` in the export payload
+- `docs/schema_importers.sql` migration: creates both tables, RLS policies, seeds four importer records, drops `import_history.file_format` CHECK constraint
+
+### Changed
+- `POST /import/upload` now validates uploaded file extension against the importer's declared `fileTypes` — returns 400 with a clear message if mismatch
+- `import_history.file_format` now stores the importer id (e.g. `lpl_csv`, `ofx_qfx`) instead of a generic category string
+
+---
+
 ## [1.2.0] — 2026-05-21
 
 ### Added
