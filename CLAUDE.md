@@ -187,4 +187,4 @@ NJSD plans: import via Manual Entry → Fund/Stock mode quarterly.
 ## Pending / TODO
 - [ ] Merrill Lynch CSV importer
 - [ ] Schwab CSV importer
-- [ ] Production deployment (Dockerfile, Jupiter VPS 142.202.190.9, ptraker.com DNS)
+- [x] Production deployment (Dockerfile, Jupiter VPS 142.202.190.9, ptraker.com DNS)
