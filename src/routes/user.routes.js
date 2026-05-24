@@ -25,4 +25,7 @@ router.get('/importer-preferences', userController.getImporterPreferences);
 // PATCH /api/v1/user/importer-preferences
 router.patch('/importer-preferences', userController.updateImporterPreferences);
 
+// POST /api/v1/user/purge-import-history
+router.post('/purge-import-history', userController.purgeImportHistory);
+
 module.exports = router;

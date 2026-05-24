@@ -2,6 +2,7 @@
 
 const { getAdminClient } = require('../lib/supabase');
 const { notifyAdmins } = require('../services/notifications');
+const { runPurge } = require('../lib/importHistory');
 const logger = require('../utils/logger');
 
 // =============================================================================
@@ -255,6 +256,35 @@ const updateImporterPreferences = async (req, res, next) => {
   }
 };
 
+// -----------------------------------------------------------------------------
+// POST /api/v1/user/purge-import-history
+// Deletes import_history records beyond the user's stored retention limit.
+// No-ops if limit is NULL (unlimited).
+// -----------------------------------------------------------------------------
+const purgeImportHistory = async (req, res, next) => {
+  try {
+    const supabase = getAdminClient();
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('import_history_limit')
+      .eq('id', req.user.id)
+      .single();
+
+    const limit = profile?.import_history_limit;
+    if (!limit) {
+      return res.status(200).json({ success: true, deleted: 0, message: 'No limit set' });
+    }
+
+    const deleted = await runPurge(supabase, req.user.id, limit);
+    logger.info('Import history purged', { userId: req.user.id, limit, deleted });
+    return res.status(200).json({ success: true, deleted });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   requestUpgrade,
   getUpgradeRequest,
@@ -262,4 +292,5 @@ module.exports = {
   exportData,
   getImporterPreferences,
   updateImporterPreferences,
+  purgeImportHistory,
 };

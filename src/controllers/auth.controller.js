@@ -150,7 +150,7 @@ const getProfile = async (req, res, next) => {
 
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, display_name, role, avatar_url, created_at, updated_at')
+      .select('id, display_name, role, avatar_url, discoverable, import_history_limit, created_at, updated_at')
       .eq('id', req.user.id)
       .single();
 
@@ -164,13 +164,15 @@ const getProfile = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       profile: {
-        id: profile.id,
-        email: req.user.email,
-        displayName: profile.display_name,
-        role: profile.role,
-        avatarUrl: profile.avatar_url,
-        createdAt: profile.created_at,
-        updatedAt: profile.updated_at,
+        id:                 profile.id,
+        email:              req.user.email,
+        displayName:        profile.display_name,
+        role:               profile.role,
+        avatarUrl:          profile.avatar_url,
+        discoverable:       profile.discoverable,
+        importHistoryLimit: profile.import_history_limit,
+        createdAt:          profile.created_at,
+        updatedAt:          profile.updated_at,
       },
     });
 
@@ -195,14 +197,19 @@ const updateProfile = async (req, res, next) => {
       });
     }
 
-    const { displayName, avatarUrl, discoverable } = req.body;
+    const { displayName, avatarUrl, discoverable, importHistoryLimit } = req.body;
     const supabase = getAdminClient();
 
     // Build update object with only provided fields
     const updates = {};
-    if (displayName   !== undefined) updates.display_name  = displayName;
-    if (avatarUrl     !== undefined) updates.avatar_url    = avatarUrl;
-    if (discoverable  !== undefined) updates.discoverable  = discoverable;
+    if (displayName        !== undefined) updates.display_name          = displayName;
+    if (avatarUrl          !== undefined) updates.avatar_url            = avatarUrl;
+    if (discoverable       !== undefined) updates.discoverable          = discoverable;
+    if (importHistoryLimit !== undefined) {
+      updates.import_history_limit = importHistoryLimit === null
+        ? null
+        : parseInt(importHistoryLimit, 10);
+    }
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ success: false, message: 'No fields to update' });
@@ -212,7 +219,7 @@ const updateProfile = async (req, res, next) => {
       .from('profiles')
       .update(updates)
       .eq('id', req.user.id)
-      .select('id, display_name, role, avatar_url, discoverable, updated_at')
+      .select('id, display_name, role, avatar_url, discoverable, import_history_limit, updated_at')
       .single();
 
     if (error) return next(error);
@@ -222,13 +229,14 @@ const updateProfile = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       profile: {
-        id:           profile.id,
-        email:        req.user.email,
-        displayName:  profile.display_name,
-        role:         profile.role,
-        avatarUrl:    profile.avatar_url,
-        discoverable: profile.discoverable,
-        updatedAt:    profile.updated_at,
+        id:                 profile.id,
+        email:              req.user.email,
+        displayName:        profile.display_name,
+        role:               profile.role,
+        avatarUrl:          profile.avatar_url,
+        discoverable:       profile.discoverable,
+        importHistoryLimit: profile.import_history_limit,
+        updatedAt:          profile.updated_at,
       },
     });
 

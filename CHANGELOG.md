@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.5.0] — 2026-05-24
+
+### Added
+- `profiles.import_history_limit INTEGER DEFAULT NULL` column support: `getProfile` returns `importHistoryLimit`, `updateProfile` accepts it
+- `src/lib/importHistory.js` — `runPurge(supabase, userId, limit)` helper that deletes records beyond the limit while always keeping the most-recent import per account (protects `last_imported_at` on the dashboard)
+- `POST /user/purge-import-history` — manual purge endpoint using the user's stored limit; no-ops if limit is NULL
+- `docs/schema_history_retention.sql` — migration adding the `import_history_limit` column
+
+### Changed
+- `GET /import/history`: account enrichment now fetches and returns `institution` alongside `id` and `name`, enabling the client to display the correct institution label in the import history grouped view
+- Auto-purge runs non-fatally after every successful import when the user has a limit set
+
+---
+
 ## [1.3.1] — 2026-05-22
 
 ### Fixed

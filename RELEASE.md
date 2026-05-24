@@ -1,3 +1,38 @@
+# Release Notes — v1.5.0
+
+**Date:** 2026-05-24
+**Type:** Minor — import history retention setting
+
+## Summary
+
+Adds a per-user import history retention limit. Users can choose to keep the
+last 10, 25, 50, or 100 imports (or unlimited). The purge logic always preserves
+the most-recent import per account so the dashboard's "Last Import" date is never
+affected. Auto-purge runs after every import when a limit is set; a manual
+"Save & Apply" button on the Profile page triggers an immediate purge.
+
+The `GET /import/history` response now includes `account.institution` so the
+client can display the correct financial institution label (e.g. "LPL Financial",
+"Community First CU") rather than the import method code.
+
+## DB migration required
+
+Run `docs/schema_history_retention.sql` in Studio before deploying:
+
+```sql
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS import_history_limit INTEGER DEFAULT NULL;
+```
+
+## Deployment
+
+```bash
+git tag v1.5.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.3.1
 
 **Date:** 2026-05-22

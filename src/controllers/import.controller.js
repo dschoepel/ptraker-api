@@ -9,6 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const { getAnonClient, getAdminClient } = require('../lib/supabase');
 const { fetchPricesForTickers } = require('../services/priceRefresh');
+const { runPurge } = require('../lib/importHistory');
 const logger = require('../utils/logger');
 
 // Importers
@@ -412,14 +413,18 @@ const getHistory = async (req, res) => {
     if (accountIds.length > 0) {
       const { data: accts } = await admin
         .from('accounts')
-        .select('id, name')
+        .select('id, name, institution')
         .in('id', accountIds);
-      (accts || []).forEach(a => { accountMap[a.id] = a.name; });
+      (accts || []).forEach(a => { accountMap[a.id] = { name: a.name, institution: a.institution }; });
     }
 
     const result = (history || []).map(h => ({
       ...h,
-      account: h.account_id ? { id: h.account_id, name: accountMap[h.account_id] || null } : null,
+      account: h.account_id ? {
+        id: h.account_id,
+        name: accountMap[h.account_id]?.name || null,
+        institution: accountMap[h.account_id]?.institution || null,
+      } : null,
     }));
 
     res.json({ history: result });
@@ -554,6 +559,20 @@ async function upsertPositions({
     }
   } catch (e) {
     logger.error('History insert exception:', e.message);
+  }
+
+  // Auto-purge old history records if the user has a retention limit set
+  try {
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('import_history_limit')
+      .eq('id', userId)
+      .single();
+    if (profile?.import_history_limit) {
+      await runPurge(admin, userId, profile.import_history_limit);
+    }
+  } catch (e) {
+    logger.warn('Import history auto-purge failed:', e.message);
   }
 
   return {
