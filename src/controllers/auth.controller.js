@@ -246,6 +246,64 @@ const updateProfile = async (req, res, next) => {
 };
 
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// POST /api/v1/auth/profile/avatar
+// Headers: Authorization: Bearer <token>
+// Body: multipart/form-data — field "avatar" (image file, max 2 MB)
+// -----------------------------------------------------------------------------
+const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+const uploadAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No image provided' });
+    const admin = getAdminClient();
+    const ext   = MIME_EXT[req.file.mimetype] || 'jpg';
+    const path  = `avatars/${req.user.id}/avatar.${ext}`;
+
+    // Remove any previously stored avatar (may have a different extension)
+    await admin.storage.from('profile-avatars').remove([
+      `avatars/${req.user.id}/avatar.jpg`,
+      `avatars/${req.user.id}/avatar.png`,
+      `avatars/${req.user.id}/avatar.webp`,
+      `avatars/${req.user.id}/avatar.gif`,
+    ]);
+
+    const { error: upErr } = await admin.storage
+      .from('profile-avatars')
+      .upload(path, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+    if (upErr) throw upErr;
+
+    const { data: { publicUrl } } = admin.storage.from('profile-avatars').getPublicUrl(path);
+
+    await admin.from('profiles').update({ avatar_url: publicUrl }).eq('id', req.user.id);
+    logger.info('Avatar uploaded', { userId: req.user.id });
+    return res.json({ avatarUrl: publicUrl });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// -----------------------------------------------------------------------------
+// DELETE /api/v1/auth/profile/avatar
+// Headers: Authorization: Bearer <token>
+// -----------------------------------------------------------------------------
+const removeAvatar = async (req, res, next) => {
+  try {
+    const admin = getAdminClient();
+    await admin.storage.from('profile-avatars').remove([
+      `avatars/${req.user.id}/avatar.jpg`,
+      `avatars/${req.user.id}/avatar.png`,
+      `avatars/${req.user.id}/avatar.webp`,
+      `avatars/${req.user.id}/avatar.gif`,
+    ]);
+    await admin.from('profiles').update({ avatar_url: null }).eq('id', req.user.id);
+    logger.info('Avatar removed', { userId: req.user.id });
+    return res.json({ avatarUrl: null });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // POST /api/v1/auth/forgot-password
 // Body: { email }
 // -----------------------------------------------------------------------------
@@ -405,6 +463,8 @@ module.exports = {
   refresh,
   getProfile,
   updateProfile,
+  uploadAvatar,
+  removeAvatar,
   forgotPassword,
   resetPassword,
 };

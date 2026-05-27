@@ -1,3 +1,35 @@
+# Release Notes — v1.6.0
+
+**Date:** 2026-05-27
+**Type:** Minor — custom profile photo upload
+
+## Summary
+
+Adds profile photo support. Users can upload a JPEG, PNG, WebP, or GIF (max 2 MB)
+from the Profile page. The image is stored in a Supabase Storage bucket
+(`profile-avatars`) and the public URL is saved to `profiles.avatar_url`. The app
+header avatar shows the photo immediately after upload and on every subsequent login.
+
+## DB migration required
+
+Run `docs/schema_avatars.sql` in Studio before deploying:
+
+```sql
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('profile-avatars', 'profile-avatars', true, 2097152,
+        ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+ON CONFLICT (id) DO NOTHING;
+```
+
+## Deployment
+
+```bash
+git tag v1.6.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.5.0
 
 **Date:** 2026-05-24

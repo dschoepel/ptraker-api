@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.6.0] — 2026-05-27
+
+### Added
+- `POST /auth/profile/avatar` — multipart image upload (max 2 MB, JPEG/PNG/WebP/GIF); stores file in `profile-avatars` Supabase Storage bucket, saves public URL to `profiles.avatar_url`
+- `DELETE /auth/profile/avatar` — removes stored image from storage and clears `profiles.avatar_url`
+- `docs/schema_avatars.sql` — creates the `profile-avatars` public storage bucket (run in Studio before deploying)
+- multer avatar upload middleware in `auth.routes.js` with mime-type and size validation
+
+---
+
 ## [1.5.0] — 2026-05-24
 
 ### Added

@@ -1,11 +1,19 @@
 'use strict';
 
 const express = require('express');
+const multer  = require('multer');
 const { body } = require('express-validator');
 const router = express.Router();
 
 const authController = require('../controllers/auth.controller');
 const { requireAuth } = require('../middleware/auth');
+
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_, file, cb) =>
+    file.mimetype.startsWith('image/') ? cb(null, true) : cb(new Error('Only image files are allowed')),
+});
 
 // =============================================================================
 // Auth Routes — /api/v1/auth
@@ -58,6 +66,12 @@ router.patch('/profile',
   ],
   authController.updateProfile
 );
+
+// POST /api/v1/auth/profile/avatar
+router.post('/profile/avatar', requireAuth, avatarUpload.single('avatar'), authController.uploadAvatar);
+
+// DELETE /api/v1/auth/profile/avatar
+router.delete('/profile/avatar', requireAuth, authController.removeAvatar);
 
 // POST /api/v1/auth/forgot-password
 router.post('/forgot-password',
