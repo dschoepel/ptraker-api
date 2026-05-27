@@ -1,3 +1,28 @@
+# Release Notes — v1.6.1
+
+**Date:** 2026-05-27
+**Type:** Patch — avatar URL hostname fix
+
+## Summary
+
+Fixes profile photo upload storing the internal Docker hostname
+(`ptraker-supabase-kong:8000`) as the public avatar URL, causing
+`ERR_NAME_NOT_RESOLVED` in the browser. The URL is now constructed from a
+`SUPABASE_PUBLIC_URL` env var so it always points to the externally-reachable
+address.
+
+**Required:** add `SUPABASE_PUBLIC_URL=https://supabase.ptraker.com` to the
+production `.env` on Jupiter before restarting the API container.
+
+## Deployment
+
+```bash
+git tag v1.6.1
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.6.0
 
 **Date:** 2026-05-27

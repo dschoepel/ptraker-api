@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.6.1] — 2026-05-27
+
+### Fixed
+- Avatar upload stored internal Docker hostname (`ptraker-supabase-kong:8000`) as the public URL, making avatars unreachable in the browser. Now constructs the URL from `SUPABASE_PUBLIC_URL` env var (falls back to `SUPABASE_URL`). Set `SUPABASE_PUBLIC_URL=https://supabase.ptraker.com` in production `.env`.
+
+---
+
 ## [1.6.0] — 2026-05-27
 
 ### Added

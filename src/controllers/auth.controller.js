@@ -273,7 +273,10 @@ const uploadAvatar = async (req, res, next) => {
       .upload(path, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
     if (upErr) throw upErr;
 
-    const { data: { publicUrl } } = admin.storage.from('profile-avatars').getPublicUrl(path);
+    // Use SUPABASE_PUBLIC_URL so the stored URL is the externally-reachable address,
+    // not the internal Docker hostname that SUPABASE_URL may point to.
+    const supabasePublicUrl = process.env.SUPABASE_PUBLIC_URL || process.env.SUPABASE_URL;
+    const publicUrl = `${supabasePublicUrl}/storage/v1/object/public/profile-avatars/${path}`;
 
     await admin.from('profiles').update({ avatar_url: publicUrl }).eq('id', req.user.id);
     logger.info('Avatar uploaded', { userId: req.user.id });
