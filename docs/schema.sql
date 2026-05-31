@@ -397,3 +397,53 @@ GRANT SELECT ON public.net_worth_summary TO authenticated;
 -- =============================================================================
 -- DONE
 -- =============================================================================
+
+
+-- =============================================================================
+-- MIGRATION: Portfolio Value History
+-- =============================================================================
+-- Run this block separately in Supabase Studio SQL Editor AFTER the base
+-- schema above has been applied. Safe to re-run (uses IF NOT EXISTS / IF EXISTS).
+-- =============================================================================
+
+-- Step 1: Add include_in_snapshot opt-in flag to accounts
+-- Default FALSE — existing accounts must opt in explicitly
+ALTER TABLE public.accounts
+  ADD COLUMN IF NOT EXISTS include_in_snapshot BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Step 2: Per-account daily snapshot table
+-- Stores one row per account per date; portfolio/institution totals are
+-- derived client-side by aggregating these rows.
+CREATE TABLE IF NOT EXISTS public.account_daily_snapshots (
+  id               UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID           NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  account_id       UUID           NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+  snapshot_date    DATE           NOT NULL,
+  total_value      NUMERIC(18,2)  NOT NULL,
+  total_cost_basis NUMERIC(18,2),           -- NULL on backfill rows (no cost data from Yahoo)
+  is_backfilled    BOOLEAN        NOT NULL DEFAULT FALSE,
+  created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+  UNIQUE(account_id, snapshot_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_acct_snapshots_user_date
+  ON public.account_daily_snapshots(user_id, snapshot_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_acct_snapshots_account_date
+  ON public.account_daily_snapshots(account_id, snapshot_date DESC);
+
+-- Reuses the update_updated_at() function defined above
+CREATE OR REPLACE TRIGGER acct_snapshots_updated_at
+  BEFORE UPDATE ON public.account_daily_snapshots
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- Step 3: Row Level Security
+-- Users can only SELECT their own snapshot rows.
+-- INSERT/UPDATE go through the API's admin client (bypasses RLS).
+ALTER TABLE public.account_daily_snapshots ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "users can view own account snapshots" ON public.account_daily_snapshots;
+CREATE POLICY "users can view own account snapshots"
+  ON public.account_daily_snapshots FOR SELECT
+  USING ((select auth.uid()) = user_id);

@@ -87,6 +87,10 @@ router.patch('/:id',
       .optional()
       .isBoolean()
       .withMessage('isActive must be true or false'),
+    body('includeInSnapshot')
+      .optional()
+      .isBoolean()
+      .withMessage('includeInSnapshot must be true or false'),
   ],
   accountController.update
 );

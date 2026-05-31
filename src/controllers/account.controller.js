@@ -28,6 +28,7 @@ const getAll = async (req, res, next) => {
         type,
         account_number_last4,
         is_active,
+        include_in_snapshot,
         notes,
         created_at,
         updated_at
@@ -158,7 +159,7 @@ const update = async (req, res, next) => {
       });
     }
 
-    const { name, institution, type, accountNumberLast4, notes, isActive } = req.body;
+    const { name, institution, type, accountNumberLast4, notes, isActive, includeInSnapshot } = req.body;
 
     // Build update object with only the fields that were provided
     const updates = {};
@@ -168,6 +169,7 @@ const update = async (req, res, next) => {
     if (accountNumberLast4 !== undefined)  updates.account_number_last4 = accountNumberLast4;
     if (notes !== undefined)               updates.notes = notes;
     if (isActive !== undefined)            updates.is_active = isActive;
+    if (includeInSnapshot !== undefined)   updates.include_in_snapshot = includeInSnapshot;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({

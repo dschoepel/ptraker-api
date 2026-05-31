@@ -67,6 +67,7 @@ app.use('/api/v1/import',    require('./routes/import.routes'));
 app.use('/api/v1/prices', require('./routes/price.routes'));
 app.use('/api/v1/positions', require('./routes/position.routes'));
 app.use('/api/v1/dashboard', require('./routes/dashboard.routes'));
+app.use('/api/v1/analytics', require('./routes/analytics.routes'));
 app.use('/api/v1/watchlist', require('./routes/watchlist.routes'));
 app.use('/api/v1/admin',  require('./routes/admin.routes'));
 app.use('/api/v1/shares', require('./routes/shares.routes'));

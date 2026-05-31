@@ -2,6 +2,7 @@
 
 const cron = require('node-cron');
 const { fetchPrices } = require('./priceRefresh');
+const { captureSnapshot } = require('./snapshotService');
 const logger = require('../utils/logger');
 
 // =============================================================================
@@ -33,6 +34,15 @@ const startScheduler = () => {
         logger.info('Nightly price refresh complete', results);
       } catch (err) {
         logger.error('Nightly price refresh failed', { error: err.message });
+      }
+
+      // Capture daily portfolio snapshot after prices are fresh
+      try {
+        const snapResults = await captureSnapshot();
+        logger.info('Nightly snapshot complete', snapResults);
+      } catch (snapErr) {
+        logger.error('Nightly snapshot failed', { error: snapErr.message });
+        // Non-fatal — price refresh already succeeded
       }
     },
     {
