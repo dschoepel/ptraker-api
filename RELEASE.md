@@ -1,3 +1,40 @@
+# Release Notes — v1.7.0
+
+**Date:** 2026-05-31
+**Type:** Minor — portfolio value history
+
+## Summary
+
+Adds daily portfolio value snapshots and a Yahoo Finance historical backfill.
+Each opted-in account is snapshotted nightly (after the 4 pm CT price refresh)
+using current prices from `price_cache`. Users can also trigger a backfill from
+the Analytics tab to reconstruct up to 2 years of estimated history using
+current holdings × historical split-adjusted closing prices.
+
+A new `account_daily_snapshots` table stores one row per account per trading day.
+The analytics API aggregates these rows for the client: the new
+`GET /analytics/history` and `POST /analytics/backfill` endpoints serve the
+Portfolio Value Over Time chart introduced in v1.7.0 of the client.
+
+## Deployment
+
+Run the SQL migration in Supabase Studio **before** deploying:
+
+```sql
+-- from docs/schema.sql — MIGRATION: Portfolio Value History section
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS include_in_snapshot ...
+CREATE TABLE IF NOT EXISTS public.account_daily_snapshots ...
+```
+
+Then tag and push:
+
+```bash
+git tag v1.7.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.6.1
 
 **Date:** 2026-05-27

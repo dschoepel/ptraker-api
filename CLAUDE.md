@@ -35,8 +35,11 @@ getAdminClient()  // bypasses RLS — for cross-user ops, history inserts
 ### yahoo-finance2 v3
 ```javascript
 const YahooFinance = require('yahoo-finance2').default;
-const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
 // use yf.quote(), yf.search() — autoc decommissioned
+// yf.historical() maps to chart() internally in v3.14+; suppress 'ripHistorical' notice
+// historical() requires explicit period2 (not undefined) or validation fails
+// omit events option entirely — passing events:'history' maps to '' and fails ChartOptions schema
 ```
 
 ### Supabase .catch() — NOT supported on query builder
@@ -53,7 +56,8 @@ if (error) logger.warn(error.message);
 
 ### Tables
 - `profiles` — display_name, role (user/admin/viewer), notification_settings JSONB, discoverable BOOLEAN
-- `accounts` — institution, type, account_number_last4, is_active, user_id
+- `accounts` — institution, type, account_number_last4, is_active, include_in_snapshot, user_id
+- `account_daily_snapshots` — user_id, account_id, snapshot_date DATE, total_value, total_cost_basis (NULL on backfill), is_backfilled; UNIQUE(account_id, snapshot_date)
 - `positions` — ticker, shares, cost_basis, asset_type, as_of_date, account_id, user_id
 - `price_cache` — shared, CASH always $1.00
 - `import_history` — see constraints below
@@ -129,11 +133,12 @@ const dbAcct = dbAccounts.find(a => String(a.account_number_last4).trim() === la
 
 ## API Routes (all under /api/v1/)
 - auth: login, logout, refresh, profile GET/PATCH, forgot-password, reset-password
-- accounts: GET, POST, PATCH/:id, DELETE/:id
+- accounts: GET, POST, PATCH/:id, DELETE/:id  (`includeInSnapshot` bool accepted on PATCH)
 - positions: GET list, DELETE/:id
 - import: GET /importers (DB-filtered by user prefs), POST /upload (multipart + file type validation), POST /manual, GET /history
 - prices: POST /refresh
 - dashboard: GET
+- analytics: GET /history?days=N, POST /backfill `{ lookbackDays }` (see snapshotService.js)
 - watchlist: GET, GET /search, GET /:ticker/history, POST, PATCH/:ticker, DELETE/:ticker
 - admin: GET/POST/DELETE /users, POST /invite, GET/PATCH /role-requests/:id, GET/PATCH/POST /notification-settings(/test), GET/POST/PATCH /importers
 - shares: GET /, GET /discoverable-users, POST /, DELETE /:id, GET /:ownerId/dashboard

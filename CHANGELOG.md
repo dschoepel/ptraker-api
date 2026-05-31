@@ -5,6 +5,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.7.0] — 2026-05-31
+
+### Added
+- `account_daily_snapshots` table — stores one row per account per trading day; RLS limits SELECT to the owning user; INSERT/UPDATE done via admin client in the snapshot service
+- `accounts.include_in_snapshot` boolean column (default FALSE) — per-account opt-in flag for snapshot and backfill
+- `src/services/snapshotService.js` — two exports:
+  - `captureSnapshot()`: nightly job that reads current prices from `price_cache` and upserts a snapshot row for every opted-in account; called by scheduler after `fetchPrices()` completes
+  - `backfill(userId, lookbackDays)`: fetches historical daily prices from Yahoo Finance `historical()` for every ticker in the user's opted-in accounts (split-adjusted via `adjClose`), filters to genuine trading days (no weekends, ≥40% of tickers must have data), bulk-upserts per-account rows; clears stale backfill rows before each run
+- `GET /api/v1/analytics/history?days=N` — returns opted-in account metadata and flat snapshot rows for the requested range (30/90/180/365/730 days)
+- `POST /api/v1/analytics/backfill` — triggers on-demand backfill for the requesting user (lookbackDays: 30/90/180/365/730); validates at least one opted-in account exists
+
+### Changed
+- `GET /api/v1/accounts` and `PATCH /api/v1/accounts/:id` now include and accept `include_in_snapshot` / `includeInSnapshot`
+- Nightly scheduler calls `captureSnapshot()` after each `fetchPrices()` run; snapshot failure is non-fatal
+
+---
+
 ## [1.6.1] — 2026-05-27
 
 ### Fixed
