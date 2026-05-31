@@ -201,9 +201,11 @@ const search = async (req, res, next) => {
     }
 
     const YahooFinance = require('yahoo-finance2').default;
-    const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+    const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
 
-    const result = await yahooFinance.search(q);
+    // validateResult: false — Yahoo occasionally changes casing on typeDisp/quoteType
+    // which breaks schema validation; we only use symbol/name/exchDisp so validation adds no value
+    const result = await yahooFinance.search(q, {}, { validateResult: false });
 
     const results = (result.quotes || [])
       .filter(r => r.symbol && r.quoteType !== 'OPTION')

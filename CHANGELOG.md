@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.7.1] — 2026-05-31
+
+### Fixed
+- Watchlist search broken by Yahoo Finance changing `typeDisp` casing (`'equity'` → `'Equity'`), causing `FailedYahooValidationError` on every search request. Updated yahoo-finance2 from 3.14.1 → 3.15.2 (contains the schema fix) and added `{ validateResult: false }` to the `search()` call as a permanent guard against future Yahoo API drift.
+
+### Changed
+- GitHub Actions workflow: added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` to opt all steps into Node.js 24 ahead of the June 16, 2026 forced migration.
+
+---
+
 ## [1.7.0] — 2026-05-31
 
 ### Added
