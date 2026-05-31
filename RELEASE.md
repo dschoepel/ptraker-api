@@ -1,3 +1,28 @@
+# Release Notes — v1.7.1
+
+**Date:** 2026-05-31
+**Type:** Patch — watchlist search fix + Node.js 24 Actions opt-in
+
+## Summary
+
+Fixes watchlist ticker search returning 500 errors after Yahoo Finance changed
+`typeDisp` casing from `'equity'` to `'Equity'`, which broke yahoo-finance2's
+schema validation on every search request. Updated yahoo-finance2 to 3.15.2
+(contains the schema fix) and added `validateResult: false` to the `search()`
+call as a permanent guard against future Yahoo API drift.
+
+Also opts both GitHub Actions workflows into Node.js 24 ahead of the forced
+migration on June 16, 2026.
+
+## Deployment
+
+```bash
+git tag v1.7.1
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.7.0
 
 **Date:** 2026-05-31
