@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.8.0] — 2026-07-07
+
+### Fixed
+- `handle_new_user` trigger: added `SET search_path = ''` to satisfy Supabase security advisor lint rule (function should not rely on mutable search path).
+
+---
+
 ## [1.7.1] — 2026-05-31
 
 ### Fixed

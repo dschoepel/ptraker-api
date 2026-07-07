@@ -1,3 +1,23 @@
+# Release Notes — v1.8.0
+
+**Date:** 2026-07-07
+**Type:** Minor — security advisor fix
+
+## Summary
+
+Fixes the `handle_new_user` PostgreSQL trigger to include `SET search_path = ''`
+in the function definition, satisfying the Supabase security advisor lint rule
+that flags functions relying on a mutable search path.
+
+## Deployment
+
+```bash
+git tag v1.8.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.7.1
 
 **Date:** 2026-05-31
