@@ -1,3 +1,23 @@
+# Release Notes — v1.9.1
+
+**Date:** 2026-08-20
+**Type:** Patch — version sync only
+
+## Summary
+
+No functional changes. Version bump to stay in sync with ptraker-client
+v1.9.1, which fixed a `package-lock.json` drift that broke its own Docker
+build (unrelated to this repo).
+
+## Deployment
+
+```bash
+git tag v1.9.1
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.9.0
 
 **Date:** 2026-08-20

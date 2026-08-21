@@ -1,6 +1,6 @@
 {
   "name": "ptraker-api",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "portfolioTraker API",
   "main": "src/server.js",
   "scripts": {

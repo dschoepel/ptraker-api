@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.9.1] — 2026-08-20
+
+### Changed
+- Version bump only, no functional changes — kept in sync with ptraker-client v1.9.1, which fixed an unrelated `package-lock.json` drift that broke its own Docker build.
+
+---
+
 ## [1.9.0] — 2026-08-20
 
 ### Added
