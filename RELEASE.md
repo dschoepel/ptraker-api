@@ -1,3 +1,42 @@
+# Release Notes — v1.9.0
+
+**Date:** 2026-08-20
+**Type:** Minor — intraday price refresh + yahoo-finance2 v4
+
+## Summary
+
+Adds a second, intraday cron job (`INTRADAY_PRICE_REFRESH_CRON`, default
+`30 9-15 * * 1-5` in `America/New_York`) that refreshes prices hourly on the
+half-hour throughout market trading hours (9:30am–3:30pm ET, Mon-Fri),
+alongside the existing nightly full refresh + snapshot job. It's hardcoded to
+`America/New_York` regardless of the server's own `TZ`, since NYSE market
+hours are always Eastern Time.
+
+Along the way, `fetchPrices()` was fixed to source tickers from
+`positions` ∪ `watchlist` instead of `positions` only — tickers that only
+appear on someone's watchlist (never held as a position) were previously
+never refreshed automatically. This applies to both the nightly and new
+intraday job.
+
+Also upgrades `yahoo-finance2` 3.15.2 → 4.0.2. The only breaking change in v4
+is a Node ≥22 engine requirement, already satisfied by the Node 23 runtime
+used in both dev and prod — no code changes were needed, confirmed via the
+project's official upgrade guide and live smoke tests of `quote()`,
+`search()`, `historical()`, and `chart()`.
+
+Pairs with ptraker-client v1.9.0, which adds the "Refresh Prices" button and
+"Prices as of" label to the Watchlist page, consuming the existing
+`POST /prices/refresh/tickers` endpoint.
+
+## Deployment
+
+```bash
+git tag v1.9.0
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.8.0
 
 **Date:** 2026-07-07

@@ -11,7 +11,7 @@ Tracks $2M+ across 12 accounts (LPL Financial, CFCU, Associated Bank/NJSD).
 ## Stack
 - Node.js 23 / Express 4
 - Supabase PostgreSQL (self-hosted, dev: http://10.0.10.60:8100)
-- yahoo-finance2 v3 (YahooFinance class pattern, not default export)
+- yahoo-finance2 v4 (YahooFinance class pattern, not default export; requires Node ≥22, already satisfied)
 - nodemailer (GoTrue v2.186 bug — all auth emails sent manually via generateLink)
 - Winston logger
 
@@ -32,7 +32,7 @@ getAnonClient()   // respects RLS — for user-scoped queries
 getAdminClient()  // bypasses RLS — for cross-user ops, history inserts
 ```
 
-### yahoo-finance2 v3
+### yahoo-finance2 v4
 ```javascript
 const YahooFinance = require('yahoo-finance2').default;
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
@@ -41,6 +41,7 @@ const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] 
 // historical() requires explicit period2 (not undefined) or validation fails
 // omit events option entirely — passing events:'history' maps to '' and fails ChartOptions schema
 ```
+v4's only breaking change vs v3 is a Node ≥22 engine requirement (no API changes) — already satisfied by the Node 23 runtime in both dev and prod (`node:23-alpine`).
 
 ### Supabase .catch() — NOT supported on query builder
 ```javascript
@@ -51,6 +52,12 @@ const { error } = await supabase.from('table').insert({...});
 if (error) logger.warn(error.message);
 // OR wrap in try/catch
 ```
+
+### Scheduler (`services/scheduler.js`)
+Two cron jobs, both started once from `server.js`:
+- **Nightly** (`PRICE_REFRESH_CRON`, default `0 17 * * 1-5` = 5pm CT) — full price refresh + `captureSnapshot()`.
+- **Intraday** (`INTRADAY_PRICE_REFRESH_CRON`, default `30 9-15 * * 1-5` = 9:30am-3:30pm ET) — price refresh only, no snapshot. Always runs in `America/New_York` regardless of `TZ`, since market hours are ET-based.
+- Both call `fetchPrices()` (`services/priceRefresh.js`), which sources tickers from `positions` ∪ `watchlist` (via `getAllTrackedTickers`) — not `positions` alone — so watchlist-only tickers stay fresh too.
 
 ## Database Schema
 
@@ -177,6 +184,8 @@ SMTP_PASS=<password>
 SMTP_SENDER_NAME=portfolioTraker
 SMTP_FROM_EMAIL=ptraker@theschoepels.com
 CLIENT_URL=http://localhost:5173
+PRICE_REFRESH_CRON=0 17 * * 1-5          # nightly full refresh + snapshot, TZ env (default America/Chicago)
+INTRADAY_PRICE_REFRESH_CRON=30 9-15 * * 1-5   # intraday refresh only, always America/New_York
 ```
 
 ## Financial Accounts

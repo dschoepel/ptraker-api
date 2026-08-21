@@ -10,11 +10,12 @@ const logger = require('../utils/logger');
 // =============================================================================
 // Price Refresh Service
 // =============================================================================
-// Fetches current prices from Yahoo Finance for all tickers in the positions
-// table and upserts them into the price_cache table.
+// Fetches current prices from Yahoo Finance for all tickers tracked across
+// all users (positions held + watchlist entries) and upserts them into the
+// price_cache table.
 //
 // Called by:
-//   1. The nightly cron job (scheduler.js)
+//   1. The nightly + intraday cron jobs (scheduler.js)
 //   2. The manual refresh endpoint POST /api/v1/prices/refresh
 //
 // Price cache is shared across ALL users — if two family members hold AAPL,
@@ -38,10 +39,38 @@ const QUOTE_FIELDS = [
 ];
 
 // =============================================================================
+// getAllTrackedTickers
+// =============================================================================
+// All unique tickers across all users — union of positions held and
+// watchlist entries (a ticker on someone's watchlist but never held as a
+// position still needs its price kept fresh).
+// =============================================================================
+const getAllTrackedTickers = async (supabase) => {
+    const skipFilter = `(${SKIP_TICKERS.map(t => `"${t}"`).join(',')})`;
+
+    const [{ data: posTickers, error: posError }, { data: wlTickers, error: wlError }] = await Promise.all([
+        supabase.from('positions').select('ticker').not('ticker', 'in', skipFilter),
+        supabase.from('watchlist').select('ticker').not('ticker', 'in', skipFilter),
+    ]);
+
+    if (posError) {
+        logger.error('Failed to fetch position tickers', { error: posError.message });
+        throw posError;
+    }
+    if (wlError) {
+        logger.error('Failed to fetch watchlist tickers', { error: wlError.message });
+        throw wlError;
+    }
+
+    const merged = [...(posTickers || []), ...(wlTickers || [])].map(r => r.ticker);
+    return [...new Set(merged)].sort();
+};
+
+// =============================================================================
 // fetchPrices
 // =============================================================================
-// Main function — fetches prices for all unique tickers across all users.
-// Returns a summary of what was updated.
+// Main function — fetches prices for all unique tickers across all users
+// (positions ∪ watchlist). Returns a summary of what was updated.
 // =============================================================================
 const fetchPrices = async () => {
     const supabase = getAdminClient();
@@ -51,20 +80,8 @@ const fetchPrices = async () => {
 
     logger.info('Price refresh started');
 
-    // Get all unique tickers from positions table (across all users)
-    const { data: tickers, error: tickerError } = await supabase
-        .from('positions')
-        .select('ticker')
-        .not('ticker', 'in', `(${SKIP_TICKERS.map(t => `"${t}"`).join(',')})`)
-        .order('ticker');
-
-    if (tickerError) {
-        logger.error('Failed to fetch tickers', { error: tickerError.message });
-        throw tickerError;
-    }
-
-    // Deduplicate tickers
-    const uniqueTickers = [...new Set(tickers.map(r => r.ticker))];
+    // Get all unique tickers tracked across all users (positions + watchlist)
+    const uniqueTickers = await getAllTrackedTickers(supabase);
 
     if (uniqueTickers.length === 0) {
         logger.info('No tickers to refresh');
@@ -242,4 +259,4 @@ const fetchPricesForTickers = async (tickers) => {
     return results;
 };
 
-module.exports = { fetchPrices, fetchPricesForTickers };
+module.exports = { fetchPrices, fetchPricesForTickers, getAllTrackedTickers };

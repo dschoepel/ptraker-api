@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.9.0] — 2026-08-20
+
+### Added
+- Intraday price-refresh cron job (`INTRADAY_PRICE_REFRESH_CRON`, default `30 9-15 * * 1-5`, hardcoded `America/New_York` regardless of server `TZ`) — refreshes prices hourly on the half-hour, 9:30am–3:30pm ET, Mon-Fri, so Dashboard/Watchlist prices stay current through the trading day instead of only at the nightly refresh. Price-only — does not run `captureSnapshot()`.
+- `getAllTrackedTickers()` in `priceRefresh.js` — `fetchPrices()` now sources tickers from `positions` ∪ `watchlist` (previously `positions` only), so tickers that are only on a watchlist (never held as a position) get refreshed by both the nightly and intraday jobs, not just on manual add.
+- `POST /api/v1/prices/refresh/tickers` now has a client-side consumer (ptraker-client `priceService.refreshTickers`) — used by the new Watchlist "Refresh Prices" button to refresh just the watchlist's own tickers.
+
+### Changed
+- Upgraded `yahoo-finance2` 3.15.2 → 4.0.2. No breaking API changes for this codebase (confirmed via the project's upgrade guide and live smoke tests of `quote()`, `search()`, `historical()`, `chart()`); v4's only breaking change is a Node ≥22 engine requirement, already satisfied by the Node 23 runtime in dev and prod.
+- Nightly full price refresh now also covers watchlist-only tickers (see above) — slightly longer run time proportional to watchlist size across all users.
+
+---
+
 ## [1.8.0] — 2026-07-07
 
 ### Fixed
