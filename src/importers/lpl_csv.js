@@ -4,15 +4,17 @@
  * Supports the "All Accounts" position export from LPL ClientWorks/BranchNet.
  * Handles quoted newlines inside description fields (LPL wraps long names).
  *
- * Columns (0-indexed):
- *   0  Account Number    — full account number, last 4 used for DB matching
- *   3  Symbol/CUSIP      — ticker; 9999227=CASH, ----=skip
- *   4  Description       — security name (may contain embedded newlines in quotes)
- *   5  Quantity          — shares (may have commas/spaces)
- *   6  Price ($)         — unit price (may have $ and commas)
- *  10  Unit Cost
- *  11  Cost Basis ($)
- *  15  Security Type Description
+ * Columns are located by HEADER NAME, not position — LPL has changed the
+ * column order before (Nov 2026: 15-column layout, Symbol/CUSIP moved to
+ * column 2). Required headers: Account Number, Symbol/CUSIP, Quantity.
+ * Optional: Description, Price ($), Unit Cost, Cost Basis ($),
+ * Security Type Description.
+ *
+ * Symbol/CUSIP 9999227 = CASH, ---- = skip.
+ * Files without recognizable headers fall back to the legacy fixed layout
+ * (3=Symbol, 4=Description, 5=Quantity, 6=Price, 10=Unit Cost,
+ * 11=Cost Basis, 15=Security Type) only if rows have >= 16 columns;
+ * otherwise the parse fails with an error rather than importing garbage.
  */
 
 'use strict';
@@ -88,6 +90,51 @@ function resolveAssetType(secTypeDesc, ticker) {
 }
 
 // ---------------------------------------------------------------------------
+// Column resolution — header name → index
+// ---------------------------------------------------------------------------
+const normalizeHeader = (h) => String(h || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const COLUMN_HEADERS = {
+  acctId:      'account number',
+  symbol:      'symbol/cusip',
+  description: 'description',
+  quantity:    'quantity',
+  price:       'price ($)',
+  unitCost:    'unit cost',
+  costBasis:   'cost basis ($)',
+  secType:     'security type description',
+};
+const REQUIRED_COLUMNS = ['acctId', 'symbol', 'quantity'];
+
+// Legacy fixed layout used before LPL's Nov 2026 export change
+const LEGACY_COLUMNS = {
+  acctId: 0, symbol: 3, description: 4, quantity: 5, price: 6,
+  unitCost: 10, costBasis: 11, secType: 15,
+};
+const LEGACY_MIN_COLS = 16;
+
+function resolveColumns(headerRow, dataRows) {
+  const index = new Map(headerRow.map((h, i) => [normalizeHeader(h), i]));
+  const cols = {};
+  for (const [key, name] of Object.entries(COLUMN_HEADERS)) {
+    cols[key] = index.has(name) ? index.get(name) : -1;
+  }
+  const missing = REQUIRED_COLUMNS.filter(k => cols[k] < 0);
+  if (missing.length === 0) return { cols };
+
+  const looksLegacy = dataRows.length > 0 && dataRows.every(r => r.length >= LEGACY_MIN_COLS);
+  if (looksLegacy) return { cols: { ...LEGACY_COLUMNS } };
+
+  return {
+    error: 'Unrecognized LPL CSV layout — missing columns: ' +
+      missing.map(k => COLUMN_HEADERS[k]).join(', '),
+  };
+}
+
+// Tickers and 9-char CUSIPs — rejects descriptions/numbers landing in the symbol slot
+const VALID_SYMBOL = /^[A-Z0-9.\-\/]{1,12}$/;
+
+// ---------------------------------------------------------------------------
 // Parse the full CSV buffer → { accounts: [{ acctId, positions[] }], errors[] }
 // ---------------------------------------------------------------------------
 function parseLPLCSV(fileBuffer) {
@@ -97,17 +144,23 @@ function parseLPLCSV(fileBuffer) {
   const allRows = parseCSV(text);
   if (allRows.length < 2) return { accounts: [], errors: ['File appears empty'] };
 
-  // Skip header row (index 0)
   const dataRows = allRows.slice(1);
+  const { cols: c, error } = resolveColumns(allRows[0], dataRows);
+  if (error) return { accounts: [], errors: [error] };
+
+  const get = (row, key) => (c[key] >= 0 ? row[c[key]]?.trim() : undefined);
+  const minLen = Math.max(...REQUIRED_COLUMNS.map(k => c[k])) + 1;
+
   const accountMap = new Map();
+  const errors = [];
 
   for (const cols of dataRows) {
-    if (cols.length < 6) continue;
+    if (cols.length < minLen) continue;
 
-    const acctId      = cols[0]?.trim();
-    const symbol      = cols[3]?.trim();
-    const description = cols[4]?.trim();
-    const secTypeDesc = cols[15]?.trim() || '';
+    const acctId      = get(cols, 'acctId');
+    const symbol      = get(cols, 'symbol');
+    const description = get(cols, 'description');
+    const secTypeDesc = get(cols, 'secType') || '';
 
     if (!acctId || !symbol) continue;
     if (symbol === '----') continue;  // blank LPL cash placeholder row
@@ -115,10 +168,15 @@ function parseLPLCSV(fileBuffer) {
     const isCash = symbol === '9999227';
     const ticker = isCash ? 'CASH' : symbol.toUpperCase();
 
-    const shares    = parseMoney(cols[5]);
-    const price     = parseMoney(cols[6]);
-    const unitCost  = parseMoney(cols[10]);
-    const costBasis = parseMoney(cols[11]);
+    if (!isCash && !VALID_SYMBOL.test(ticker)) {
+      errors.push(`Skipped row with invalid symbol "${symbol}" (account ...${String(acctId).slice(-4)})`);
+      continue;
+    }
+
+    const shares    = parseMoney(get(cols, 'quantity'));
+    const price     = parseMoney(get(cols, 'price'));
+    const unitCost  = parseMoney(get(cols, 'unitCost'));
+    const costBasis = parseMoney(get(cols, 'costBasis'));
 
     if (shares === null || shares === 0) continue;
 
@@ -141,7 +199,7 @@ function parseLPLCSV(fileBuffer) {
     accounts.push({ acctId, positions });
   }
 
-  return { accounts, errors: [] };
+  return { accounts, errors };
 }
 
 // ---------------------------------------------------------------------------

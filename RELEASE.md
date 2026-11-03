@@ -1,3 +1,36 @@
+# Release Notes — v1.9.2
+
+**Date:** 2026-11-03
+**Type:** Patch — LPL CSV import fix + yahoo-finance2 4.0.5
+
+## Summary
+
+LPL changed its Positions CSV export to a 15-column layout, moving
+`Symbol/CUSIP` from column 3 to column 2. The LPL importer read columns by
+fixed index, so every field shifted: fund descriptions were stored as
+tickers, quantity as the name, price as shares, and unrealized G/L as cost
+basis. Yahoo Finance can't quote a fund name, so all LPL holdings showed "—"
+after the 2026-11-03 import. yahoo-finance2 itself was working throughout.
+
+The importer now maps columns by header name. Unrecognized layouts fail
+with a clear error instead of importing bad data, and rows with an invalid
+symbol are skipped with a warning.
+
+Also bumps `yahoo-finance2` 4.0.2 → 4.0.5 (verified quotes for all 33 LPL
+tickers) and removes the unused duplicate `lpl.csv.js` importer.
+
+**After deploying:** re-import the current LPL Positions CSV. The import's
+sync-delete replaces the bad positions; no manual DB cleanup is needed.
+
+## Deployment
+
+```bash
+git tag v1.9.2
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.9.1
 
 **Date:** 2026-08-20

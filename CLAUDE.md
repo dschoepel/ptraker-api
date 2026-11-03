@@ -121,7 +121,7 @@ All file importers must export:
 ### Current Importers
 | Importer | File | Multi | Notes |
 |---|---|---|---|
-| `lpl_csv` | LPL Financial CSV | ✅ | Handles quoted newlines in descriptions |
+| `lpl_csv` | LPL Financial CSV | ✅ | Handles quoted newlines in descriptions; maps columns by **header name** (LPL reordered columns Nov 2026) — unrecognized layout returns an error, invalid symbols skipped |
 | `ofx_qfx` | Any OFX/QFX | ✅ | Investment (INVSTMTMSGSRSV1) + Bank (BANKMSGSRSV1) |
 | `cfcu_csv` | CFCU transaction CSV | ✅ | Multi-account, auto-matches by last4, uses first row balance per account |
 | `manual` | No file | ❌ | Cash balance or fund/stock by market value |

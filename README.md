@@ -9,7 +9,7 @@ Express/Node.js backend for **portfolioTraker** — personal investment portfoli
 | Framework | Express 4 |
 | Database | PostgreSQL via self-hosted Supabase |
 | Auth | Supabase Auth (JWT) |
-| Price data | yahoo-finance2 v3 |
+| Price data | yahoo-finance2 v4 |
 | Scheduler | node-cron |
 | Email | nodemailer |
 | Logging | Winston |

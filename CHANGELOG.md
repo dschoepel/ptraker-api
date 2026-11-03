@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.9.2] — 2026-11-03
+
+### Fixed
+- LPL CSV import stored fund descriptions as tickers (and quantity/price/unrealized G/L in the wrong fields) after LPL changed its Positions export to a 15-column layout with `Symbol/CUSIP` moved from column 3 to column 2. Prices then couldn't be fetched, so every LPL holding showed "—". The importer now locates columns by header name (`Account Number`, `Symbol/CUSIP`, `Description`, `Quantity`, `Price ($)`, `Unit Cost`, `Cost Basis ($)`, `Security Type Description`), with the old fixed indexes kept as a fallback for ≥16-column header-less files.
+- Unrecognized LPL layouts now fail with a clear error (`Unrecognized LPL CSV layout — missing columns: …`) instead of importing garbage; `POST /import/upload` surfaces that error rather than "No accounts in this file matched".
+- Rows whose symbol isn't a valid ticker/CUSIP are skipped and reported in `parseWarnings`.
+
+### Changed
+- Upgraded `yahoo-finance2` 4.0.2 → 4.0.5 (patch; no code changes).
+
+### Removed
+- Unused duplicate importer `src/importers/lpl.csv.js` (never loaded; shared the `lpl_csv` id).
+
+---
+
 ## [1.9.1] — 2026-08-20
 
 ### Changed

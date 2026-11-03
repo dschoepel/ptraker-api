@@ -132,6 +132,11 @@ const uploadFile = [
         const { accounts: parsedAccounts, errors: parseErrors } =
           importer.parseMulti(req.file.buffer);
 
+        // Parser couldn't read the file (e.g. unrecognized layout) — surface why
+        if (parsedAccounts.length === 0 && parseErrors?.length) {
+          return res.status(400).json({ message: parseErrors[0], parseWarnings: parseErrors });
+        }
+
         // Load all user accounts — use admin client to bypass RLS, include inactive
         const { data: dbAccounts, error: acctErr } = await admin
           .from('accounts')
