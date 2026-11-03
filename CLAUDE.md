@@ -58,6 +58,7 @@ Two cron jobs, both started once from `server.js`:
 - **Nightly** (`PRICE_REFRESH_CRON`, default `0 17 * * 1-5` = 5pm CT) — full price refresh + `captureSnapshot()`.
 - **Intraday** (`INTRADAY_PRICE_REFRESH_CRON`, default `30 9-15 * * 1-5` = 9:30am-3:30pm ET) — price refresh only, no snapshot. Always runs in `America/New_York` regardless of `TZ`, since market hours are ET-based.
 - Both call `fetchPrices()` (`services/priceRefresh.js`), which sources tickers from `positions` ∪ `watchlist` (via `getAllTrackedTickers`) — not `positions` alone — so watchlist-only tickers stay fresh too.
+- Tickers with `price_cache.fetch_source = 'manual'` (hand-priced private holdings) are skipped by both `fetchPrices()` and `fetchPricesForTickers()` — reported as `skipped`, manual price preserved.
 
 ## Database Schema
 

@@ -1,3 +1,28 @@
+# Release Notes — v1.9.3
+
+**Date:** 2026-11-03
+**Type:** Patch — skip manually priced tickers in price refresh
+
+## Summary
+
+Tickers priced by hand through Manual Entry (`price_cache.fetch_source =
+'manual'`, e.g. private stock certificates) have no Yahoo Finance quote, so
+every price refresh logged them as a failure. The nightly, intraday, manual
+and post-import refreshes now skip them: they're counted as `skipped`, listed
+under `skippedManual` in the log, and their manual price is preserved.
+
+Note: once a ticker has a manual price, Yahoo refreshes stop for it — only
+enter a price in Manual Entry for holdings that aren't exchange-listed.
+
+## Deployment
+
+```bash
+git tag v1.9.3
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.9.2
 
 **Date:** 2026-11-03

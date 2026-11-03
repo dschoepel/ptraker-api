@@ -67,6 +67,26 @@ const getAllTrackedTickers = async (supabase) => {
 };
 
 // =============================================================================
+// getManualPriceTickers
+// =============================================================================
+// Tickers whose price was entered by hand (private/unlisted holdings, e.g. a
+// stock certificate). Yahoo has no quote for these, so refreshing them only
+// logs a failure — skip them and keep the manual price.
+// =============================================================================
+const getManualPriceTickers = async (supabase) => {
+    const { data, error } = await supabase
+        .from('price_cache')
+        .select('ticker')
+        .eq('fetch_source', 'manual');
+
+    if (error) {
+        logger.warn('Failed to fetch manual-price tickers', { error: error.message });
+        return new Set();
+    }
+    return new Set((data || []).map(r => r.ticker));
+};
+
+// =============================================================================
 // fetchPrices
 // =============================================================================
 // Main function — fetches prices for all unique tickers across all users
@@ -81,15 +101,21 @@ const fetchPrices = async () => {
     logger.info('Price refresh started');
 
     // Get all unique tickers tracked across all users (positions + watchlist)
-    const uniqueTickers = await getAllTrackedTickers(supabase);
+    const [allTickers, manualTickers] = await Promise.all([
+        getAllTrackedTickers(supabase),
+        getManualPriceTickers(supabase),
+    ]);
+    const uniqueTickers = allTickers.filter(t => !manualTickers.has(t));
+    const skippedManual = allTickers.filter(t => manualTickers.has(t));
 
     if (uniqueTickers.length === 0) {
-        logger.info('No tickers to refresh');
-        return { updated: 0, failed: 0, skipped: 0 };
+        logger.info('No tickers to refresh', { skippedManual });
+        return { updated: 0, failed: 0, skipped: skippedManual.length };
     }
 
     logger.info(`Fetching prices for ${uniqueTickers.length} tickers`, {
         tickers: uniqueTickers,
+        ...(skippedManual.length > 0 && { skippedManual }),
     });
 
     // ==========================================================================
@@ -99,7 +125,7 @@ const fetchPrices = async () => {
     // We batch to avoid overwhelming the API
     // ==========================================================================
     const BATCH_SIZE = 10;
-    const results = { updated: 0, failed: 0, skipped: 0 };
+    const results = { updated: 0, failed: 0, skipped: skippedManual.length };
     const priceRows = [];
 
     for (let i = 0; i < uniqueTickers.length; i += BATCH_SIZE) {
@@ -201,7 +227,8 @@ const fetchPrices = async () => {
 const fetchPricesForTickers = async (tickers) => {
     const supabase = getAdminClient();
 
-    const toFetch = tickers.filter(t => !SKIP_TICKERS.includes(t));
+    const manualTickers = await getManualPriceTickers(supabase);
+    const toFetch = tickers.filter(t => !SKIP_TICKERS.includes(t) && !manualTickers.has(t));
     if (toFetch.length === 0) return { updated: 0, failed: 0 };
 
     logger.info(`Fetching prices for ${toFetch.length} specific tickers`, {

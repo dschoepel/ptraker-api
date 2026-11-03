@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.9.3] — 2026-11-03
+
+### Changed
+- Price refresh (`fetchPrices` and `fetchPricesForTickers`) now skips tickers whose `price_cache.fetch_source` is `'manual'` (private/unlisted holdings priced by hand via Manual Entry, e.g. a stock certificate). Yahoo has no quote for these, so each refresh logged one spurious failure; they're now reported as `skipped` and listed under `skippedManual` in the "Fetching prices" log line, and the manual price is left untouched.
+
+---
+
 ## [1.9.2] — 2026-11-03
 
 ### Fixed
