@@ -2,7 +2,11 @@
 
 ## Project
 Personal investment portfolio tracker backend.
-Tracks $2M+ across 12 accounts (LPL Financial, CFCU, Associated Bank/NJSD).
+Tracks holdings across brokerage, retirement and bank accounts.
+
+**This repo is public.** Never put host names, IPs, emails, SMTP hosts, or real
+account names/numbers in tracked files — those belong in the private notes loaded
+via the workspace `CLAUDE.local.md`.
 
 ## Repos
 - API:    https://github.com/dschoepel/ptraker-api     (E:\ptraker\ptraker-api)
@@ -10,17 +14,16 @@ Tracks $2M+ across 12 accounts (LPL Financial, CFCU, Associated Bank/NJSD).
 
 ## Stack
 - Node.js 23 / Express 4
-- Supabase PostgreSQL (self-hosted, dev: http://10.0.10.60:8100)
+- Supabase PostgreSQL (self-hosted)
 - yahoo-finance2 v4 (YahooFinance class pattern, not default export; requires Node ≥22, already satisfied)
 - nodemailer (GoTrue v2.186 bug — all auth emails sent manually via generateLink)
 - Winston logger
 
 ## Dev Infrastructure
-- Dev Supabase: Mercury 10.0.10.60
-  - Kong: 8100, Postgres: 5434, Studio: http://10.0.10.60:3002
+- Dev Supabase: self-hosted slim stack on the LAN (host/ports in private notes)
   - Stack: supabase-ptraker, containers: ptraker-supabase-*
-  - Templates: /data/supabase-ptraker/volumes/templates/
 - ENABLE_EMAIL_AUTOCONFIRM=false (required)
+- GoTrue action links (invite/reset) are passed through `toPublicLink()` (`utils/publicLink.js`), which rewrites the origin to `SUPABASE_PUBLIC_URL` — set it in dev too
 - GoTrue v2.186 bug: invite AND recovery emails silently skipped
   → Use generateLink + nodemailer for BOTH invite and password reset
 
@@ -168,46 +171,29 @@ router.get('/search', ...);             // BEFORE /:ticker
 Stored in `profiles.notification_settings` JSONB:
 ```json
 {
-  "ntfy":  { "enabled": true, "url": "https://ntfy.schoepels.com", "topic": "ptraker-alerts", "token": "" },
-  "email": { "enabled": true, "recipient": "dave@theschoepels.com" }
+  "ntfy":  { "enabled": true, "url": "https://ntfy.example.com", "topic": "ptraker-alerts", "token": "" },
+  "email": { "enabled": true, "recipient": "admin@example.com" }
 }
 ```
 Ntfy headers: sanitize with `str.replace(/[^\x00-\x7F]/g, '')`
 
 ## Environment Variables
+Real values live in the untracked `.env` (and the private notes loaded via `CLAUDE.local.md`) — never in this file.
 ```
-SUPABASE_URL=http://10.0.10.60:8100
+SUPABASE_URL=<internal Supabase/Kong URL>
+SUPABASE_PUBLIC_URL=<browser-reachable Supabase URL — stored avatar URLs + GoTrue action-link rewrite>
 SUPABASE_SERVICE_ROLE_KEY=<key>
-SMTP_HOST=theschoepels-com-smtp.dynu.com
+SMTP_HOST=<smtp host>
 SMTP_PORT=587
-SMTP_USER=dave@theschoepels.com
+SMTP_USER=<smtp user>
 SMTP_PASS=<password>
 SMTP_SENDER_NAME=portfolioTraker
-SMTP_FROM_EMAIL=ptraker@theschoepels.com
+SMTP_FROM_EMAIL=<from address>
 CLIENT_URL=http://localhost:5173
 PRICE_REFRESH_CRON=0 17 * * 1-5          # nightly full refresh + snapshot, TZ env (default America/Chicago)
 INTRADAY_PRICE_REFRESH_CRON=30 9-15 * * 1-5   # intraday refresh only, always America/New_York
 ```
 
-## Financial Accounts
-| Account | Institution | Type | Last 4 |
-|---|---|---|---|
-| April's Inherited IRA | lpl | retirement | 9584 |
-| April's Roth IRA | lpl | retirement | 0517 |
-| D and A Non IRA Account | lpl | brokerage | 0878 |
-| Dave's Inherited IRA | lpl | retirement | 0509 |
-| Dave's K-C Roll-Over IRA | lpl | retirement | 0505 |
-| Dave's Roth IRA | lpl | retirement | 0502 |
-| Dave's Stocks | lpl | brokerage | 2461 |
-| CFCU Checking | cfcu | checking | 7845 |
-| CFCU Regular Savings | cfcu | savings | 8400 |
-| CFCU Money Market Savings | cfcu | savings | 8405 |
-| NJSD 403(b) Plan | associated | retirement | 9001 |
-| NJSD Deferred Comp 457 | associated | retirement | 9000 |
-
-NJSD plans: import via Manual Entry → Fund/Stock mode quarterly.
-
 ## Pending / TODO
 - [ ] Merrill Lynch CSV importer
 - [ ] Schwab CSV importer
-- [x] Production deployment (Dockerfile, Jupiter VPS 142.202.190.9, ptraker.com DNS)

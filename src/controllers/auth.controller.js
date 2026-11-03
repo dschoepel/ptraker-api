@@ -3,6 +3,7 @@
 const { getAnonClient, getAdminClient } = require('../lib/supabase');
 const { validationResult } = require('express-validator');
 const logger = require('../utils/logger');
+const { toPublicLink } = require('../utils/publicLink');
 
 // =============================================================================
 // Auth Controller
@@ -328,9 +329,8 @@ const forgotPassword = async (req, res, next) => {
       return res.status(400).json({ success: false, message: error.message });
     }
 
-    // Fix dev URL
-    const resetLink = data.properties.action_link
-      .replace(/^https:\/\/10\.0\.10\.60\//, 'http://10.0.10.60:8100/');
+    // GoTrue may build the link from the request host — point it at the public Supabase URL
+    const resetLink = toPublicLink(data.properties.action_link);
 
     const otp = data.properties.email_otp;
 

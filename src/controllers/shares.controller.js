@@ -3,6 +3,7 @@
 const { getAdminClient } = require('../lib/supabase');
 const { sendEmail } = require('../services/notifications');
 const logger = require('../utils/logger');
+const { toPublicLink } = require('../utils/publicLink');
 
 // =============================================================================
 // Portfolio Shares Controller
@@ -129,9 +130,8 @@ const createShare = async (req, res, next) => {
         targetUserId = data.user.id;
         isNewUser = true;
 
-        // Fix dev URL
-        const inviteLink = data.properties.action_link
-          .replace(/^https:\/\/10\.0\.10\.60\//, 'http://10.0.10.60:8100/');
+        // GoTrue may build the link from the request host — point it at the public Supabase URL
+        const inviteLink = toPublicLink(data.properties.action_link);
 
         // Get owner's display name for the email
         const { data: ownerProfile } = await supabase

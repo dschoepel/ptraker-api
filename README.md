@@ -27,10 +27,10 @@ npm run dev            # port 5000
 - JWT auth via Supabase, role-based access (admin/user/viewer)
 - Portfolio sharing between users
 - Generic OFX/QFX importer — investment positions + bank balances, any institution
-- LPL Financial CSV multi-account importer
+- LPL Financial CSV multi-account importer (columns mapped by header name)
 - CFCU transaction CSV importer
-- Manual position entry (cash balance or fund/stock by market value)
-- Scheduled daily price refresh (Yahoo Finance, weekdays 4pm CT)
+- Manual position entry (cash balance, fund/stock by market value, or private stock with a manual price)
+- Scheduled price refresh via Yahoo Finance — nightly (weekdays 5pm CT, with snapshot) and intraday (hourly 9:30am–3:30pm ET); manually priced tickers are skipped
 - User invite and password reset via generateLink + nodemailer
 - Admin notifications via Ntfy push and email
 - Data export endpoint

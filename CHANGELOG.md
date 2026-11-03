@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.9.4] — 2026-11-03
+
+### Changed
+- GoTrue action links (admin invite, portfolio-share invite, password reset) now go through `toPublicLink()` (`src/utils/publicLink.js`), which rewrites the link origin to `SUPABASE_PUBLIC_URL`. Replaces a hard-coded dev-host rewrite in three controllers. No-op when `SUPABASE_PUBLIC_URL` is unset or already matches (production).
+- `CLAUDE.md` / `RELEASE.md`: removed environment-specific details (this repo is public); private notes are loaded via a gitignored `CLAUDE.local.md`.
+
+### Removed
+- `test-import.js` — ad-hoc local test script containing an (expired) session token.
+
+---
+
 ## [1.9.3] — 2026-11-03
 
 ### Changed

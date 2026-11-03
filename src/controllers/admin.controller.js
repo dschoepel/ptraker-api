@@ -3,6 +3,7 @@
 const { getAdminClient } = require('../lib/supabase');
 const { notifyAdmins, testNotification } = require('../services/notifications');
 const logger = require('../utils/logger');
+const { toPublicLink } = require('../utils/publicLink');
 
 // =============================================================================
 // Admin Controller
@@ -101,9 +102,8 @@ const inviteUser = async (req, res, next) => {
       return res.status(400).json({ success: false, message: error.message });
     }
 
-    // Fix URL in dev — GoTrue builds from request host header instead of API_EXTERNAL_URL
-    const inviteLink = data.properties.action_link
-      .replace(/^https:\/\/10\.0\.10\.60\//, 'http://10.0.10.60:8100/');
+    // GoTrue may build the link from the request host — point it at the public Supabase URL
+    const inviteLink = toPublicLink(data.properties.action_link);
 
     // Set role in user metadata
     await supabase.auth.admin.updateUserById(data.user.id, {

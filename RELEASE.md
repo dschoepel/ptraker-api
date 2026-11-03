@@ -1,3 +1,33 @@
+# Release Notes — v1.9.4
+
+**Date:** 2026-11-03
+**Type:** Patch — public-repo cleanup + GoTrue link helper
+
+## Summary
+
+Removes environment-specific details from this public repo. The only code
+change: invite and password-reset links from `generateLink()` are now passed
+through `toPublicLink()`, which points the link at `SUPABASE_PUBLIC_URL`
+instead of relying on a hard-coded dev-host rewrite. Production already sets
+`SUPABASE_PUBLIC_URL` and its links already use that origin, so behaviour
+there is unchanged. Dev environments should set `SUPABASE_PUBLIC_URL` to the
+browser-reachable Supabase URL.
+
+Related config note: GoTrue's `MAILER_URLPATHS_*` values must be unquoted in
+the Supabase `.env` — quoted values can reach GoTrue literally and produce
+broken `/%22/auth/v1/verify%22` links.
+
+Also deletes `test-import.js` (local test script with an expired token).
+
+## Deployment
+
+```bash
+git tag v1.9.4
+git push origin main --tags
+```
+
+---
+
 # Release Notes — v1.9.3
 
 **Date:** 2026-11-03
@@ -211,7 +241,7 @@ Fixes profile photo upload storing the internal Docker hostname
 address.
 
 **Required:** add `SUPABASE_PUBLIC_URL=https://supabase.ptraker.com` to the
-production `.env` on Jupiter before restarting the API container.
+production `.env` before restarting the API container.
 
 ## Deployment
 
@@ -345,7 +375,7 @@ Import history now records the importer id (`lpl_csv`, `ofx_qfx`, etc.) in the
 in Supabase Studio (production) before pushing the tag:
 
 ```
-ssh -p 22791 -L 3002:localhost:3002 dschoepel@142.202.190.9
+ssh -p <ssh-port> -L 3002:localhost:3002 <user>@<prod-host>
 ```
 Then open http://localhost:3002 → SQL Editor → run `docs/schema_importers.sql`.
 
