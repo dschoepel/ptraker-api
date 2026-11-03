@@ -1,23 +1,22 @@
 # Release Notes — v1.9.4
 
 **Date:** 2026-11-03
-**Type:** Patch — public-repo cleanup + GoTrue link helper
+**Type:** Patch — GoTrue link helper
 
 ## Summary
 
-Removes environment-specific details from this public repo. The only code
-change: invite and password-reset links from `generateLink()` are now passed
-through `toPublicLink()`, which points the link at `SUPABASE_PUBLIC_URL`
-instead of relying on a hard-coded dev-host rewrite. Production already sets
-`SUPABASE_PUBLIC_URL` and its links already use that origin, so behaviour
-there is unchanged. Dev environments should set `SUPABASE_PUBLIC_URL` to the
-browser-reachable Supabase URL.
+Invite and password-reset links from `generateLink()` now pass through a
+shared `toPublicLink()` helper, which sets the link origin from
+`SUPABASE_PUBLIC_URL`, consolidating per-controller URL handling. Links are
+unchanged when `SUPABASE_PUBLIC_URL` is unset or already matches. Set
+`SUPABASE_PUBLIC_URL` to the browser-reachable Supabase URL in every
+environment.
 
 Related config note: GoTrue's `MAILER_URLPATHS_*` values must be unquoted in
 the Supabase `.env` — quoted values can reach GoTrue literally and produce
 broken `/%22/auth/v1/verify%22` links.
 
-Also deletes `test-import.js` (local test script with an expired token).
+Also includes documentation updates and removes an obsolete local test script.
 
 ## Deployment
 

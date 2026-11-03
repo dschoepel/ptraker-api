@@ -4,9 +4,8 @@
 Personal investment portfolio tracker backend.
 Tracks holdings across brokerage, retirement and bank accounts.
 
-**This repo is public.** Never put host names, IPs, emails, SMTP hosts, or real
-account names/numbers in tracked files — those belong in the private notes loaded
-via the workspace `CLAUDE.local.md`.
+Keep tracked files environment-neutral — environment values go in the untracked
+`.env` and the notes loaded via the workspace `CLAUDE.local.md`.
 
 ## Repos
 - API:    https://github.com/dschoepel/ptraker-api     (E:\ptraker\ptraker-api)
